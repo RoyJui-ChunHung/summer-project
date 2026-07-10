@@ -1,7 +1,6 @@
 # Week 3 Reading Notes
 
 **Topic:** Core Database Benchmarks — Spider and BIRD
-**Date:** 2026-07-10
 
 ---
 

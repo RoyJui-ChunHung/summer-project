@@ -1,9 +1,7 @@
 # Week 1 Reading Notes
 
 **Topic:** Introduction and Field Overview
-**Date:** 2026-06-30
 
----
 
 ## Paper 1: Data Agents: Levels, State of the Art, and Open Problems
 *Luo et al., SIGMOD '26*

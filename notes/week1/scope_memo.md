@@ -1,7 +1,5 @@
 # Week 1 Scope Memo
 
-**Date:** 2026-06-30
-
 ## Project Direction
 
 Building a self-correcting SQL agent tested on Spider Hard questions with an open-source model.

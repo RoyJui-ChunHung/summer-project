@@ -1,7 +1,6 @@
 # Week 2 Reading Notes & Database-Agent Loop Sketch
 
 **Topic:** Foundational Agent and Tool-Use Methods
-**Date:** 2026-07-07
 **Required Readings:**
 1. Yao et al. — *ReAct: Synergizing Reasoning and Acting in Language Models* (ICLR 2023)
 2. Schick et al. — *Toolformer: Language Models Can Teach Themselves to Use Tools* (Meta AI, 2023)

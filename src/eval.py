@@ -32,8 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 
-# ── Hardness classification ────────────────────────────────────────────────────
-
+# Hardness classification
 def classify_hardness(sql_dict: dict) -> str:
     """
     Classify a SQL query using Spider's parsed SQL dict (the 'sql' field in dev.json).
@@ -76,8 +75,7 @@ def classify_hardness(sql_dict: dict) -> str:
     return "easy"
 
 
-# ── SQL execution ──────────────────────────────────────────────────────────────
-
+# SQL execution
 def execute_sql(db_path: Path, sql: str) -> Optional[frozenset]:
     """
     Run SQL against a SQLite database.
@@ -95,7 +93,7 @@ def execute_sql(db_path: Path, sql: str) -> Optional[frozenset]:
         return None
 
 
-# ── Agent (replace this once implemented) ─────────────────────────────────────
+# Agent (replace this once implemented)
 
 def agent_predict(question: str, db_id: str, db_path: Path, schema: dict) -> str:
     """
@@ -117,7 +115,7 @@ def agent_predict(question: str, db_id: str, db_path: Path, schema: dict) -> str
     raise NotImplementedError
 
 
-# ── Evaluation loop ────────────────────────────────────────────────────────────
+# Evaluation loop
 
 def load_schema(spider_dir: Path) -> dict:
     """Load tables.json and index by db_id."""
@@ -198,8 +196,7 @@ def evaluate(spider_dir: Path, split: str = "dev", oracle: bool = False) -> None
             pct = correct / total if total else 0
             print(f"  [{i+1:4d}/{len(hard_examples)}]  EX so far: {correct}/{total} ({pct:.1%})")
 
-    # ── Summary ──────────────────────────────────────────────────────────────
-    print()
+    # Summary
     print("=" * 55)
     print(f"Spider Hard — Execution Accuracy ({split} set)")
     print(f"  Correct : {correct}")
@@ -219,7 +216,7 @@ def evaluate(spider_dir: Path, split: str = "dev", oracle: bool = False) -> None
             print()
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+# Entry point
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate on Spider Hard subset.")
