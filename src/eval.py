@@ -21,8 +21,8 @@ The script:
   4. Executes the predicted SQL and compares results.
   5. Reports Execution Accuracy (EX).
 
-Right now agent_predict() is a stub that returns the gold SQL (oracle baseline,
-should give 100% EX). Replace it with your actual agent once implemented.
+Pass --oracle to use the gold SQL as the prediction (pipeline sanity check,
+should give ~100% EX). Otherwise agent_predict() calls the LLM via OpenRouter.
 """
 
 import argparse
@@ -260,19 +260,11 @@ def evaluate(spider_dir: Path, split: str = "dev", oracle: bool = False, limit: 
             print(f"[SKIP] gold SQL failed for db={db_id}: {gold_sql[:60]}")
             continue
 
-        # Get predicted SQL (fall back to oracle if agent not implemented)
         if oracle:
             pred_sql = gold_sql
         else:
-            try:
-                schema = schema_index.get(db_id, {})
-                pred_sql = agent_predict(question, db_id, db_path, schema, max_retries)
-            except NotImplementedError:
-                print("agent_predict() not implemented — running in oracle mode.")
-                print("To test the pipeline, we use gold SQL as the prediction.")
-                print("Replace agent_predict() in src/agent.py when ready.\n")
-                pred_sql = gold_sql
-                oracle = True   # suppress message for remaining examples
+            schema = schema_index.get(db_id, {})
+            pred_sql = agent_predict(question, db_id, db_path, schema, max_retries)
 
         pred_result = execute_sql(db_path, pred_sql)
         ex_score    = int(pred_result is not None and pred_result == gold_result)
@@ -355,7 +347,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--oracle", action="store_true",
-        help="Run oracle baseline: use gold SQL as prediction (should give ~100% EX)",
+        help="Run oracle baseline: use gold SQL as prediction (should give ~100%% EX)",
     )
     parser.add_argument(
         "--limit", type=int, default=0,
