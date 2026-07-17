@@ -36,17 +36,29 @@ There are no tests, linters, or a dependency file. Python deps: `openai`, `pytho
 
 ## Architecture
 
-The agent and eval harness currently both live in `src/eval.py`:
+Three modules; imports flow one way: `eval.py` → `agents.py` → `tools.py`.
 
-- `agent_predict()` is the agent: it prompts the model with a formatted schema, executes the returned SQL against the SQLite db, and on `sqlite3.Error` feeds the error message back for another attempt. `max_retries=1` disables the loop — this one flag is the A/B experiment lever.
-- `classify_hardness()` is a simplified reimplementation of Spider's hardness classifier, used to filter dev.json to Hard + Extra Hard only.
-- Scoring is execution accuracy (EX): both gold and predicted SQL are executed and results compared as `frozenset`s of rows (order-independent). Failures are classified as `execution_error` (SQL raised) vs `wrong_result` (ran but wrong rows).
-- `--output` writes a JSON with a `results` array of per-example records; `experiments/analyze_failures.py` consumes exactly that schema, so keep the record fields (`gold_sql`, `pred_sql`, `hardness`, `ex_score`, `reason`) stable when editing.
-- To change models, edit the `MODEL` constant at the top of `src/eval.py`; nothing else needs to change.
+**`src/tools.py`**
+- `ExecutionResult` — dataclass holding `rows: Optional[frozenset]`, `error: Optional[str]`, and an `ok` property.
+- `SQLExecutor(db_path)` — wraps SQLite; `execute(sql) → ExecutionResult`.
+
+**`src/agents.py`**
+- `format_schema(db_id, schema)` — renders a Spider tables.json entry as CREATE TABLE statements for the prompt.
+- `Agent` — abstract base class; `predict(question, db_id, executor, schema) → str`.
+- `SingleShotAgent(model)` — one LLM call, returns SQL directly. Accepts `executor` for interface consistency but does not use it.
+- `FeedbackLoopAgent(model, max_retries)` — retry loop: calls LLM, runs `executor.execute(sql)`, feeds `result.error` back if it fails, repeats up to `max_retries` times.
+- `MODEL` constant controls which model both agents default to. Swap this string to change models; nothing else needs to change.
+
+**`src/eval.py`**
+- `classify_hardness()` — simplified Spider hardness classifier; filters dev.json to Hard + Extra Hard.
+- `load_schema()` — loads tables.json, indexes by db_id.
+- `evaluate(spider_dir, split, oracle, limit, agent, output_file)` — main loop; creates one `SQLExecutor` per example, calls `agent.predict()`, scores with execution accuracy (EX): gold and pred results compared as `frozenset`s of rows (order-independent).
+- `--output` writes a JSON with a `results` array; `experiments/analyze_failures.py` reads this schema — keep the record fields (`gold_sql`, `pred_sql`, `hardness`, `ex_score`, `reason`) stable.
+- CLI: `--max_retries 1` → `SingleShotAgent`, `--max_retries N` → `FeedbackLoopAgent(max_retries=N)`.
 
 ## Known Gotchas
 
-- `max_tokens` in `agent_predict()` must stay at 2048. An earlier run with 512 scored ~28% EX because Qwen3's internal reasoning tokens consumed the budget, leaving `content: None` and empty predictions (see "Bug Found" in `experiments/experiments.md`). Related mitigations in the code: the `/no-think` suffix in the prompt and the fallback to `msg.reasoning` when `content` is empty.
+- `max_tokens` in `agents.py` must stay at 2048. An earlier run with 512 scored ~28% EX because Qwen3's internal reasoning tokens consumed the budget, leaving `content: None` and empty predictions (see "Bug Found" in `experiments/experiments.md`). Related mitigations in the code: the `/no-think` suffix in the prompt and the fallback to `msg.reasoning` when `content` is empty.
 - Empty predicted SQL executes "successfully" and returns `frozenset()`, which can silently match nothing — the `pred_empty` field in results exists to catch this.
 
 ## Conventions
