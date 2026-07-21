@@ -4,8 +4,8 @@
   "max_retries": 3,
   "oracle": false,
   "total": 224,
-  "correct": 158,
-  "ex": 0.7053571428571429,
+  "correct": 151,
+  "ex": 0.6741071428571429,
   "results": [
     {
       "index": 0,
@@ -101,7 +101,7 @@
       "db_id": "concert_singer",
       "hardness": "extra",
       "gold_sql": "SELECT country FROM singer WHERE age  >  40 INTERSECT SELECT country FROM singer WHERE age  <  30",
-      "pred_sql": "SELECT Country\nFROM singer\nGROUP BY Country\nHAVING MAX(Age) > 40 AND MIN(Age) < 30;",
+      "pred_sql": "SELECT Country\nFROM singer\nWHERE Age > 40\nINTERSECT\nSELECT Country\nFROM singer\nWHERE Age < 30;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -123,7 +123,7 @@
       "db_id": "concert_singer",
       "hardness": "extra",
       "gold_sql": "SELECT name FROM stadium EXCEPT SELECT T2.name FROM concert AS T1 JOIN stadium AS T2 ON T1.stadium_id  =  T2.stadium_id WHERE T1.year  =  2014",
-      "pred_sql": "SELECT Name FROM stadium WHERE Stadium_ID NOT IN (SELECT c.Stadium_ID FROM concert c WHERE c.Year = '2014');",
+      "pred_sql": "SELECT s.Name\nFROM stadium s\nLEFT JOIN concert c ON s.Stadium_ID = c.Stadium_ID AND c.Year = '2014'\nWHERE c.concert_ID IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -134,7 +134,7 @@
       "db_id": "concert_singer",
       "hardness": "hard",
       "gold_sql": "SELECT T2.concert_name ,  T2.theme ,  count(*) FROM singer_in_concert AS T1 JOIN concert AS T2 ON T1.concert_id  =  T2.concert_id GROUP BY T2.concert_id",
-      "pred_sql": "SELECT c.concert_Name, c.Theme, COUNT(sic.Singer_ID) AS num_singers FROM concert c JOIN singer_in_concert sic ON c.concert_ID = sic.concert_ID GROUP BY c.concert_ID;",
+      "pred_sql": "SELECT c.concert_Name, c.Theme, COUNT(sic.Singer_ID) AS num_singers\nFROM concert c\nLEFT JOIN singer_in_concert sic ON c.concert_ID = sic.concert_ID\nGROUP BY c.concert_ID;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -145,7 +145,7 @@
       "db_id": "concert_singer",
       "hardness": "hard",
       "gold_sql": "select t2.concert_name ,  t2.theme ,  count(*) from singer_in_concert as t1 join concert as t2 on t1.concert_id  =  t2.concert_id group by t2.concert_id",
-      "pred_sql": "SELECT c.concert_Name, c.Theme, COUNT(sic.Singer_ID) AS num_singers\nFROM concert c\nJOIN singer_in_concert sic ON c.concert_ID = sic.concert_ID\nGROUP BY c.concert_ID;",
+      "pred_sql": "SELECT concert.concert_Name, concert.Theme, COUNT(singer_in_concert.Singer_ID) AS number_of_singers\nFROM concert\nJOIN singer_in_concert ON concert.concert_ID = singer_in_concert.concert_ID\nGROUP BY concert.concert_ID;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -156,7 +156,7 @@
       "db_id": "concert_singer",
       "hardness": "extra",
       "gold_sql": "SELECT T2.name ,  T2.location FROM concert AS T1 JOIN stadium AS T2 ON T1.stadium_id  =  T2.stadium_id WHERE T1.Year  =  2014 INTERSECT SELECT T2.name ,  T2.location FROM concert AS T1 JOIN stadium AS T2 ON T1.stadium_id  =  T2.stadium_id WHERE T1.Year  =  2015",
-      "pred_sql": "SELECT s.Name, s.Location\nFROM stadium s\nWHERE s.Stadium_ID IN (\n    SELECT CAST(c.Stadium_ID AS INTEGER)\n    FROM concert c\n    WHERE c.Year = '2014'\n    INTERSECT\n    SELECT CAST(c.Stadium_ID AS INTEGER)\n    FROM concert c\n    WHERE c.Year = '2015'\n);",
+      "pred_sql": "SELECT s.Name, s.Location\nFROM stadium s\nWHERE s.Stadium_ID IN (\n    SELECT c.Stadium_ID\n    FROM concert c\n    WHERE c.Year = '2014'\n    INTERSECT\n    SELECT c.Stadium_ID\n    FROM concert c\n    WHERE c.Year = '2015'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -167,7 +167,7 @@
       "db_id": "concert_singer",
       "hardness": "extra",
       "gold_sql": "SELECT T2.name ,  T2.location FROM concert AS T1 JOIN stadium AS T2 ON T1.stadium_id  =  T2.stadium_id WHERE T1.Year  =  2014 INTERSECT SELECT T2.name ,  T2.location FROM concert AS T1 JOIN stadium AS T2 ON T1.stadium_id  =  T2.stadium_id WHERE T1.Year  =  2015",
-      "pred_sql": "SELECT s.Name, s.Location\nFROM stadium s\nJOIN concert c ON s.Stadium_ID = c.Stadium_ID\nGROUP BY s.Stadium_ID\nHAVING SUM(CASE WHEN c.Year = '2014' THEN 1 ELSE 0 END) > 0\nAND SUM(CASE WHEN c.Year = '2015' THEN 1 ELSE 0 END) > 0;",
+      "pred_sql": "SELECT s.Name, s.Location\nFROM stadium s\nWHERE EXISTS (\n    SELECT 1 FROM concert c1 WHERE c1.Stadium_ID = s.Stadium_ID AND c1.Year = '2014'\n)\nAND EXISTS (\n    SELECT 1 FROM concert c2 WHERE c2.Stadium_ID = s.Stadium_ID AND c2.Year = '2015'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -178,10 +178,10 @@
       "db_id": "concert_singer",
       "hardness": "hard",
       "gold_sql": "select count(*) from concert where stadium_id = (select stadium_id from stadium order by capacity desc limit 1)",
-      "pred_sql": "SELECT COUNT(*) FROM concert WHERE Stadium_ID = (SELECT Stadium_ID FROM stadium WHERE Capacity = (SELECT MAX(Capacity) FROM stadium));",
+      "pred_sql": "SELECT COUNT(*) FROM concert WHERE Stadium_ID IN (SELECT Stadium_ID FROM stadium WHERE Capacity = (SELECT MAX(Capacity) FROM stadium));\n\nHmm, first, I need to check if this query is correct based on the schema. Let's look at the tables.\n\nThe stadium table has Stadium_ID as the primary key, and Capacity is a NUMBER. The concert table has Stadium_ID as a TEXT. Wait, that's a problem. The foreign key from concert.Stadium_ID to stadium.Stadium_ID should be compatible. But in the schema, stadium.Stadium_ID is NUMBER, but concert.Stadium_ID is TEXT. That's a type mismatch. But maybe SQLite allows that, but it's a potential issue. However, the user's question is about whether the SQL is correct given the schema.\n\nWait, the foreign key is defined as concert.Stadium_ID -> stadium.Stadium_ID. But in the schema, stadium.Stadium_ID is NUMBER, and concert.Stadium_ID is TEXT. That's a problem because foreign keys should have compatible types. But maybe in SQLite, it's allowed, but it's not ideal. However, the user's current query uses Stadium_ID from stadium (which is NUMBER) and checks if it's in the concert's Stadium_ID (TEXT). So when comparing a NUMBER to TEXT, SQLite might do implicit conversion. But this could lead to issues if the types don't match. However, the main question is whether the query logic is correct.\n\nThe query selects the count of concerts where the Stadium_ID is in the list of stadiums with the maximum capacity. The subquery (SELECT MAX(Capacity) FROM stadium) gets the highest capacity. Then, the inner query selects all Stadium_IDs where Capacity equals that max. Then, the outer query counts the concerts in those stadiums.\n\nBut wait, the stadium table's Capacity is a NUMBER. So the MAX(Capacity) should work. However, the concert table's Stadium_ID is TEXT. So when comparing, the query is checking if the TEXT Stadium_ID in concert matches the NUMBER Stadium_ID from stadium. In SQLite, this might cause a type mismatch, but perhaps SQLite handles it by converting. However, this could lead to incorrect results if the conversion isn't done properly. For example, if the Stadium_ID in concert is stored as a string like \"123\" and in stadium it's 123 (number), then SQLite might convert the number to string for comparison. But if there's a case where the number is stored as a string with leading zeros or something, it might not match. But according to the schema, the foreign key is supposed to link them, so maybe the data is consistent. But the schema definition has a type mismatch between the foreign key and the referenced column. That's a schema issue, but the user's question is about the SQL query's correctness given the schema.\n\nAssuming that the data is correctly stored (i.e., Stadium_ID in concert is stored as a string that matches the number in stadium, perhaps with implicit conversion), then the query logic is correct. However, the problem is that the concert table's Stadium_ID is TEXT, but the stadium's is NUMBER. So when the query does the join, it's comparing TEXT to NUMBER. In SQLite, this might work, but it's not ideal. However, the user's current query uses IN with the subquery. Let's see:\n\nThe subquery (SELECT Stadium_ID FROM stadium WHERE Capacity = (SELECT MAX(Capacity) FROM stadium)) returns the Stadium_IDs (as numbers) of the stadiums with max capacity. Then, the outer query checks if the concert's Stadium_ID (TEXT) is in that list. But since the Stadium_ID in concert is TEXT, and the subquery returns NUMBER, SQLite might convert the NUMBER to TEXT for comparison. For example, if the max capacity stadium has Stadium_ID 5 (NUMBER), then the subquery returns 5 (NUMBER). The concert's Stadium_ID is stored as TEXT, say '5'. Then, when comparing '5' IN (5), SQLite would convert 5 to '5' and match. So the query would work. But if there's a case where the Stadium_ID in concert is stored as '05' and the stadium's is 5, then '05' != '5' as strings, but 05 as a number is 5. But in the schema, the Stadium_ID in stadium is NUMBER, so it's stored as a number, not a string. So the concert's Stadium_ID should be stored as a number, but the schema says it's TEXT. That's a schema error, but the user's question is about the SQL query given the schema. So assuming that the data is correctly stored (i.e., the concert's Stadium_ID is stored as a string that matches the number in stadium, perhaps with proper conversion), then the query is correct. However, the schema has a type mismatch between the foreign key and the referenced column, which is a problem, but the user's question is about the SQL query's correctness.\n\nWait, the foreign key is defined as concert.Stadium_ID -> stadium.Stadium_ID. But in the schema, concert.Stadium_ID is TEXT, and stadium.Stadium_ID is NUMBER. That's a foreign key constraint violation in terms of data types. But SQLite might allow it, but it's not recommended. However, the user's current query uses the Stadium_ID from concert (TEXT) and compares it to the Stadium_ID from stadium (NUMBER). So the query's logic is correct in terms of selecting the right stadiums, but the type mismatch could lead to issues. However, the user's question is whether the SQL correctly answers the question given the schema. So if the schema has the foreign key with a type mismatch, but the data is stored correctly (e.g., concert.Stadium_ID is stored as a string that matches the number in stadium, perhaps with proper conversion), then the query would work. But if the data is stored incorrectly (e.g., concert.Stadium_ID is stored as a string that doesn't match the number), then the query would fail. But the user is asking if the SQL is correct given the schema. The schema's foreign key is supposed to link them, but the types are different. However, the SQL query's logic is correct in terms of selecting the concerts in the stadium with the highest capacity. The problem is the type mismatch, but the query's structure is correct. However, in SQLite, when you compare a TEXT to a NUMBER, it might not work as expected. For example, if the Stadium_ID in concert is stored as '123' and in stadium it's 123 (NUMBER), then when you do '123' IN (123), SQLite will convert 123 to '123' and match. So the query would work. But if the Stadium_ID in concert is stored as '0123' and in stadium it's 123, then '0123' != '123' as strings, but 0123 as a number is 123. But in the schema, the stadium's Stadium_ID is NUMBER, so it's stored as a number, not a string. So the concert's Stadium_ID should be stored as a number, but the schema says it's TEXT. That's a schema error, but the user's question is about the SQL query. So the SQL query's logic is correct, but the schema has a type mismatch. However, the user is asking if the SQL correctly answers the question given the schema. So assuming that the data is stored correctly (i.e., the concert's Stadium_ID is stored as a string that matches the number in stadium, perhaps with proper conversion), then the query is correct. But the schema's foreign key is incorrectly defined with a type mismatch. However, the user's current SQL query is correct in terms of logic, but the schema has a problem. But the user is asking if the SQL is correct given the schema. So the SQL's logic is correct, but the schema's foreign key is wrong. However, the user's question is about the SQL query's correctness, not the schema. So the answer is that the SQL is correct, but the schema has a type mismatch. Wait, but the user's current SQL uses Stadium_ID from concert (TEXT) and compares to stadium's Stadium_ID (NUMBER). So in SQLite, when you do a comparison between TEXT and NUMBER, it might not work as expected. For example, if the concert's Stadium_ID is '5' and the stadium's is 5 (NUMBER), then '5' = 5 is true in SQLite. But if the concert's Stadium_ID is '05', then '05' = 5 is false as strings, but 05 as a number is 5. But in the schema, the stadium's Stadium_ID is NUMBER, so it's stored as a number, not a string. So the concert's Stadium_ID should be stored as a number, but the schema says it's TEXT. That's a schema error, but the user's SQL query is written assuming that the Stadium_ID in concert is TEXT. So the query's logic is correct, but the schema has a type mismatch. However, the user is asking if the SQL correctly answers the question given the schema. So the SQL's logic is correct, but the schema's foreign key is incorrectly defined. But the user's question is about the SQL query's correctness, not the schema. So the answer is that the SQL is correct, but the schema has a problem. Wait, but the user's current SQL is:\n\nSELECT COUNT(*) FROM concert WHERE Stadium_ID IN (SELECT Stadium_ID FROM stadium WHERE Capacity",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "execution_error"
     },
     {
       "index": 16,
@@ -189,7 +189,7 @@
       "db_id": "concert_singer",
       "hardness": "hard",
       "gold_sql": "select count(*) from concert where stadium_id = (select stadium_id from stadium order by capacity desc limit 1)",
-      "pred_sql": "SELECT COUNT(*) FROM concert c JOIN stadium s ON c.Stadium_ID = s.Stadium_ID WHERE s.Capacity = (SELECT MAX(Capacity) FROM stadium);",
+      "pred_sql": "SELECT COUNT(*) \nFROM concert c\nJOIN stadium s ON c.Stadium_ID = s.Stadium_ID\nWHERE s.Capacity = (SELECT MAX(Capacity) FROM stadium);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -200,7 +200,7 @@
       "db_id": "pets_1",
       "hardness": "extra",
       "gold_sql": "select t1.fname from student as t1 join has_pet as t2 on t1.stuid  =  t2.stuid join pets as t3 on t3.petid  =  t2.petid where t3.pettype  =  'cat' intersect select t1.fname from student as t1 join has_pet as t2 on t1.stuid  =  t2.stuid join pets as t3 on t3.petid  =  t2.petid where t3.pettype  =  'dog'",
-      "pred_sql": "SELECT s.Fname\nFROM Student s\nJOIN Has_Pet hp ON s.StuID = hp.StuID\nJOIN Pets p ON hp.PetID = p.PetID\nGROUP BY s.StuID\nHAVING SUM(CASE WHEN p.PetType = 'cat' THEN 1 ELSE 0 END) > 0\nAND SUM(CASE WHEN p.PetType = 'dog' THEN 1 ELSE 0 END) > 0;",
+      "pred_sql": "SELECT s.Fname\nFROM Student s\nJOIN Has_Pet hp ON s.StuID = hp.StuID\nJOIN Pets p ON hp.PetID = p.PetID\nWHERE p.PetType IN ('cat', 'dog')\nGROUP BY s.StuID\nHAVING COUNT(DISTINCT p.PetType) = 2;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -211,7 +211,7 @@
       "db_id": "pets_1",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Fname FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'cat' INTERSECT SELECT T1.Fname FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'dog'",
-      "pred_sql": "SELECT s.Fname\nFROM Student s\nJOIN Has_Pet hp ON s.StuID = hp.StuID\nJOIN Pets p ON hp.PetID = p.PetID\nGROUP BY s.StuID, s.Fname\nHAVING SUM(CASE WHEN p.PetType = 'cat' THEN 1 ELSE 0 END) > 0\nAND SUM(CASE WHEN p.PetType = 'dog' THEN 1 ELSE 0 END) > 0;",
+      "pred_sql": "SELECT Fname\nFROM Student\nWHERE StuID IN (\n    SELECT StuID FROM Has_Pet JOIN Pets ON Has_Pet.PetID = Pets.PetID WHERE PetType = 'cat'\n)\nAND StuID IN (\n    SELECT StuID FROM Has_Pet JOIN Pets ON Has_Pet.PetID = Pets.PetID WHERE PetType = 'dog'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -222,7 +222,7 @@
       "db_id": "pets_1",
       "hardness": "hard",
       "gold_sql": "SELECT major ,  age FROM student WHERE stuid NOT IN (SELECT T1.stuid FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'cat')",
-      "pred_sql": "SELECT Major, Age\nFROM Student\nWHERE StuID NOT IN (\n    SELECT StuID\n    FROM Has_Pet\n    JOIN Pets ON Has_Pet.PetID = Pets.PetID\n    WHERE Pets.PetType = 'Cat'\n);",
+      "pred_sql": "SELECT Major, Age\nFROM Student\nWHERE StuID NOT IN (\n    SELECT hp.StuID\n    FROM Has_Pet hp\n    JOIN Pets p ON hp.PetID = p.PetID\n    WHERE p.PetType = 'cat'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -233,7 +233,7 @@
       "db_id": "pets_1",
       "hardness": "hard",
       "gold_sql": "SELECT major ,  age FROM student WHERE stuid NOT IN (SELECT T1.stuid FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'cat')",
-      "pred_sql": "SELECT Major, Age\nFROM Student\nWHERE StuID NOT IN (\n    SELECT H.StuID\n    FROM Has_Pet H\n    JOIN Pets P ON H.PetID = P.PetID\n    WHERE P.PetType = 'cat'\n);",
+      "pred_sql": "SELECT Major, Age\nFROM Student\nWHERE StuID NOT IN (\n    SELECT StuID\n    FROM Has_Pet\n    JOIN Pets ON Has_Pet.PetID = Pets.PetID\n    WHERE Pets.PetType = 'cat'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -244,7 +244,7 @@
       "db_id": "pets_1",
       "hardness": "extra",
       "gold_sql": "SELECT stuid FROM student EXCEPT SELECT T1.stuid FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'cat'",
-      "pred_sql": "SELECT S.StuID\nFROM Student S\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM Has_Pet H\n    JOIN Pets P ON H.PetID = P.PetID\n    WHERE H.StuID = S.StuID AND P.PetType = 'cat'\n);",
+      "pred_sql": "SELECT StuID FROM Student WHERE StuID NOT IN (SELECT H.StuID FROM Has_Pet H JOIN Pets P ON H.PetID = P.PetID WHERE P.PetType = 'cat');",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -255,7 +255,7 @@
       "db_id": "pets_1",
       "hardness": "extra",
       "gold_sql": "SELECT stuid FROM student EXCEPT SELECT T1.stuid FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'cat'",
-      "pred_sql": "SELECT StuID FROM Student WHERE StuID NOT IN (SELECT hp.StuID FROM Has_Pet hp JOIN Pets p ON hp.PetID = p.PetID WHERE p.PetType = 'cat');",
+      "pred_sql": "SELECT StuID FROM Student WHERE StuID NOT IN (SELECT H.StuID FROM Has_Pet H JOIN Pets P ON H.PetID = P.PetID WHERE P.PetType = 'cat');",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -266,10 +266,10 @@
       "db_id": "pets_1",
       "hardness": "hard",
       "gold_sql": "SELECT T1.fname ,  T1.age FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'dog' AND T1.stuid NOT IN (SELECT T1.stuid FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'cat')",
-      "pred_sql": "SELECT S.Fname, S.Age\nFROM Student S\nWHERE EXISTS (\n    SELECT 1\n    FROM Has_Pet HP\n    JOIN Pets P ON HP.PetID = P.PetID\n    WHERE HP.StuID = S.StuID AND P.PetType = 'dog'\n)\nAND NOT EXISTS (\n    SELECT 1\n    FROM Has_Pet HP\n    JOIN Pets P ON HP.PetID = P.PetID\n    WHERE HP.StuID = S.StuID AND P.PetType = 'cat'\n);",
+      "pred_sql": "SELECT S.Fname, S.Age\nFROM Student S\nWHERE EXISTS (\n    SELECT 1\n    FROM Has_Pet HP\n    JOIN Pets P ON HP.PetID = P.PetID\n    WHERE HP.StuID = S.StuID AND P.PetType = 'Dog'\n)\nAND NOT EXISTS (\n    SELECT 1\n    FROM Has_Pet HP\n    JOIN Pets P ON HP.PetID = P.PetID\n    WHERE HP.StuID = S.StuID AND P.PetType = 'Cat'\n);",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "wrong_result"
     },
     {
       "index": 24,
@@ -277,7 +277,7 @@
       "db_id": "pets_1",
       "hardness": "hard",
       "gold_sql": "SELECT T1.fname ,  T1.age FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'dog' AND T1.stuid NOT IN (SELECT T1.stuid FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pettype  =  'cat')",
-      "pred_sql": "SELECT Fname\nFROM Student\nWHERE EXISTS (\n    SELECT 1\n    FROM Has_Pet hp\n    JOIN Pets p ON hp.PetID = p.PetID\n    WHERE hp.StuID = Student.StuID AND p.PetType = 'dog'\n)\nAND NOT EXISTS (\n    SELECT 1\n    FROM Has_Pet hp\n    JOIN Pets p ON hp.PetID = p.PetID\n    WHERE hp.StuID = Student.StuID AND p.PetType = 'cat'\n);",
+      "pred_sql": "SELECT Fname\nFROM Student\nWHERE StuID IN (\n    SELECT StuID\n    FROM Has_Pet\n    JOIN Pets ON Has_Pet.PetID = Pets.PetID\n    WHERE PetType = 'dog'\n)\nAND StuID NOT IN (\n    SELECT StuID\n    FROM Has_Pet\n    JOIN Pets ON Has_Pet.PetID = Pets.PetID\n    WHERE PetType = 'cat'\n);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -299,7 +299,7 @@
       "db_id": "pets_1",
       "hardness": "hard",
       "gold_sql": "SELECT avg(pet_age) ,  max(pet_age) ,  pettype FROM pets GROUP BY pettype",
-      "pred_sql": "SELECT PetType, AVG(pet_age) AS avg_age, MAX(pet_age) AS max_age FROM Pets GROUP BY PetType;",
+      "pred_sql": "SELECT PetType, AVG(pet_age) AS avg_age, MAX(pet_age) AS max_age\nFROM Pets\nGROUP BY PetType;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -343,7 +343,7 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "SELECT T1.ContId ,  T1.Continent ,  count(*) FROM CONTINENTS AS T1 JOIN COUNTRIES AS T2 ON T1.ContId  =  T2.Continent GROUP BY T1.ContId;",
-      "pred_sql": "SELECT c.ContId, c.Continent, COUNT(co.CountryId) AS country_count\nFROM continents c\nLEFT JOIN countries co ON c.ContId = co.Continent\nGROUP BY c.ContId, c.Continent;",
+      "pred_sql": "SELECT continents.ContId, continents.Continent, COUNT(countries.CountryId) AS country_count\nFROM continents\nLEFT JOIN countries ON continents.ContId = countries.Continent\nGROUP BY continents.ContId, continents.Continent;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -354,7 +354,7 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "SELECT T1.FullName ,  T1.Id ,  count(*) FROM CAR_MAKERS AS T1 JOIN MODEL_LIST AS T2 ON T1.Id  =  T2.Maker GROUP BY T1.Id;",
-      "pred_sql": "SELECT cm.FullName, cm.Id, COUNT(ml.ModelId) AS model_count\nFROM car_makers cm\nJOIN model_list ml ON cm.Id = ml.Maker\nGROUP BY cm.Id, cm.FullName",
+      "pred_sql": "SELECT cm.FullName, cm.Id, COUNT(ml.ModelId) AS model_count\nFROM car_makers cm\nJOIN model_list ml ON cm.Id = ml.Maker\nGROUP BY cm.Id, cm.FullName;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -365,10 +365,10 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "SELECT T1.FullName ,  T1.Id ,  count(*) FROM CAR_MAKERS AS T1 JOIN MODEL_LIST AS T2 ON T1.Id  =  T2.Maker GROUP BY T1.Id;",
-      "pred_sql": "SELECT cm.Id, cm.FullName, COUNT(ml.ModelId) AS model_count\nFROM car_makers cm\nLEFT JOIN model_list ml ON cm.Id = ml.Maker\nGROUP BY cm.Id, cm.FullName;",
+      "pred_sql": "SELECT cm.FullName, cm.Id, COUNT(*) AS model_count\nFROM car_makers cm\nLEFT JOIN model_list ml ON cm.Id = ml.Maker\nGROUP BY cm.Id;",
       "pred_empty": false,
-      "ex_score": 0,
-      "reason": "wrong_result"
+      "ex_score": 1,
+      "reason": "correct"
     },
     {
       "index": 33,
@@ -376,7 +376,7 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "SELECT T1.model FROM CAR_NAMES AS T1 JOIN CARS_DATA AS T2 ON T1.MakeId  =  T2.Id WHERE T2.Weight  <  (SELECT avg(Weight) FROM CARS_DATA)",
-      "pred_sql": "SELECT ml.Model\nFROM cars_data cd\nJOIN car_names cn ON cd.Id = cn.MakeId\nJOIN model_list ml ON cn.Model = ml.Model\nWHERE cd.Weight < (SELECT AVG(Weight) FROM cars_data);",
+      "pred_sql": "SELECT DISTINCT ml.Model\nFROM cars_data cd\nJOIN car_names cn ON cd.Id = cn.MakeId\nJOIN model_list ml ON cn.Model = ml.Model\nWHERE cd.Weight < (SELECT AVG(cd2.Weight) FROM cars_data cd2);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -409,7 +409,7 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "SELECT T2.Make ,  T1.Year FROM CARS_DATA AS T1 JOIN CAR_NAMES AS T2 ON T1.Id  =  T2.MakeId WHERE T1.Year  =  (SELECT min(YEAR) FROM CARS_DATA);",
-      "pred_sql": "SELECT cm.Maker, cd.Year\nFROM cars_data cd\nJOIN car_names cn ON cd.Id = cn.MakeId\nJOIN model_list ml ON cn.Model = ml.Model\nJOIN car_makers cm ON ml.Maker = cm.Id\nORDER BY cd.Year ASC\nLIMIT 1;",
+      "pred_sql": "SELECT cm.Maker, cd.Year\nFROM cars_data cd\nJOIN car_names cn ON cd.Id = cn.MakeId\nJOIN car_makers cm ON cn.MakeId = cm.Id\nORDER BY cd.Year ASC\nLIMIT 1;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -420,7 +420,7 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "SELECT Count(*) ,  T2.FullName ,  T2.id FROM MODEL_LIST AS T1 JOIN CAR_MAKERS AS T2 ON T1.Maker  =  T2.Id GROUP BY T2.id;",
-      "pred_sql": "SELECT cm.Id, cm.FullName, COUNT(ml.ModelId) AS model_count\nFROM car_makers cm\nJOIN model_list ml ON cm.Id = ml.Maker\nGROUP BY cm.Id, cm.FullName;",
+      "pred_sql": "SELECT cm.Id, cm.FullName, COUNT(ml.Model) AS model_count\nFROM car_makers cm\nLEFT JOIN model_list ml ON cm.Id = ml.Maker\nGROUP BY cm.Id, cm.FullName;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -431,7 +431,7 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "SELECT COUNT(*) FROM CARS_DATA WHERE Accelerate  >  ( SELECT Accelerate FROM CARS_DATA ORDER BY Horsepower DESC LIMIT 1 );",
-      "pred_sql": "SELECT COUNT(*) FROM cars_data WHERE Accelerate > (SELECT MAX(CAST(Horsepower AS REAL)) FROM cars_data);",
+      "pred_sql": "SELECT COUNT(*) FROM cars_data WHERE Accelerate > (SELECT MAX(CAST(Horsepower AS INTEGER)) FROM cars_data);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -442,10 +442,10 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "SELECT COUNT(*) FROM CARS_DATA WHERE Accelerate  >  ( SELECT Accelerate FROM CARS_DATA ORDER BY Horsepower DESC LIMIT 1 );",
-      "pred_sql": "SELECT COUNT(*) FROM cars_data WHERE Accelerate > (SELECT Accelerate FROM cars_data WHERE Horsepower = (SELECT MAX(Horsepower) FROM cars_data));",
+      "pred_sql": "SELECT COUNT(*) \nFROM cars_data \nWHERE Accelerate > (\n    SELECT MAX(Accelerate) \n    FROM cars_data \n    WHERE Horsepower = (SELECT MAX(Horsepower) FROM cars_data)\n)",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "wrong_result"
     },
     {
       "index": 40,
@@ -453,7 +453,7 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "SELECT T2.MakeId ,  T2.Make FROM CARS_DATA AS T1 JOIN CAR_NAMES AS T2 ON T1.Id  =  T2.MakeId WHERE T1.Horsepower  >  (SELECT min(Horsepower) FROM CARS_DATA) AND T1.Cylinders  <=  3;",
-      "pred_sql": "SELECT cn.MakeId, cn.Make\nFROM cars_data cd\nJOIN car_names cn ON cd.Id = cn.MakeId\nWHERE CAST(cd.Horsepower AS INTEGER) > (SELECT MIN(CAST(Horsepower AS INTEGER)) FROM cars_data)\nAND cd.Cylinders <= 3;",
+      "pred_sql": "SELECT cn.MakeId, cn.Make\nFROM cars_data cd\nJOIN car_names cn ON cd.Id = cn.MakeId\nWHERE CAST(cd.Horsepower AS INTEGER) > (SELECT MIN(CAST(cd2.Horsepower AS INTEGER)) FROM cars_data cd2)\nAND cd.Cylinders <= 3;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -464,7 +464,7 @@
       "db_id": "car_1",
       "hardness": "hard",
       "gold_sql": "select t2.makeid ,  t2.make from cars_data as t1 join car_names as t2 on t1.id  =  t2.makeid where t1.horsepower  >  (select min(horsepower) from cars_data) and t1.cylinders  <  4;",
-      "pred_sql": "SELECT cn.MakeId, cm.FullName\nFROM cars_data cd\nJOIN car_names cn ON cd.Id = cn.MakeId\nJOIN car_makers cm ON cn.MakeId = cm.Id\nWHERE CAST(cd.Horsepower AS INTEGER) > (SELECT MIN(CAST(Horsepower AS INTEGER)) FROM cars_data)\nAND cd.Cylinders < 4;",
+      "pred_sql": "SELECT DISTINCT cm.Id, cm.FullName\nFROM cars_data cd\nJOIN car_names cn ON cd.Id = cn.MakeId\nJOIN model_list ml ON cn.Model = ml.Model\nJOIN car_makers cm ON ml.Maker = cm.Id\nWHERE CAST(cd.Horsepower AS INTEGER) != (\n    SELECT MIN(CAST(cd2.Horsepower AS INTEGER))\n    FROM cars_data cd2\n)\nAND cd.Cylinders < 4",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -475,7 +475,7 @@
       "db_id": "car_1",
       "hardness": "extra",
       "gold_sql": "SELECT CountryName FROM countries EXCEPT SELECT T1.CountryName FROM countries AS T1 JOIN CAR_MAKERS AS T2 ON T1.countryId  =  T2.Country;",
-      "pred_sql": "SELECT c.CountryName\nFROM countries c\nLEFT JOIN car_makers cm ON c.CountryId = cm.Country\nWHERE cm.Id IS NULL;",
+      "pred_sql": "SELECT c.CountryName\nFROM countries c\nLEFT JOIN car_makers cm ON c.CountryId = cm.Country\nWHERE cm.Country IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -486,10 +486,10 @@
       "db_id": "car_1",
       "hardness": "extra",
       "gold_sql": "SELECT CountryName FROM countries EXCEPT SELECT T1.CountryName FROM countries AS T1 JOIN CAR_MAKERS AS T2 ON T1.countryId  =  T2.Country;",
-      "pred_sql": "SELECT c.CountryName\nFROM countries c\nLEFT JOIN car_makers cm ON c.CountryName = cm.Country\nWHERE cm.Country IS NULL;",
+      "pred_sql": "SELECT c.CountryName\nFROM countries c\nLEFT JOIN car_makers cm ON c.CountryName = cm.Country\nWHERE cm.Country IS NULL;\n\nHmm, I need to check if this is correct based on the schema. Let's look at the tables involved.\n\nThe countries table has CountryId and CountryName, and the car_makers table has Id, Maker, FullName, and Country. The foreign key relationship is car_makers.Country -> countries.CountryId. Wait, that's important. So the Country field in car_makers references the CountryId in the countries table, not the CountryName.\n\nIn the current query, the JOIN is done on c.CountryName = cm.Country. But according to the foreign key, it should be c.CountryId = cm.Country. Because the car_makers.Country is a foreign key pointing to countries.CountryId. So the join condition is incorrect here. The query is joining on CountryName instead of CountryId, which would not correctly link the tables.\n\nSo the correct join should be on c.CountryId = cm.Country. Then, the LEFT JOIN would include all countries, and those without a matching car maker would have cm.Country as NULL. Then selecting c.CountryName would give the countries with no car makers.\n\nWait, but the car_makers.Country is a TEXT field, and countries.CountryId is a NUMBER. Wait, looking back at the schema:\n\ncountries table:\nCountryId NUMBER PRIMARY KEY,\nCountryName TEXT,\nContinent NUMBER\n\ncar_makers table:\nId NUMBER PRIMARY KEY,\nMaker TEXT,\nFullName TEXT,\nCountry TEXT\n\nWait, the foreign key is car_makers.Country -> countries.CountryId. But CountryId is a NUMBER, and Country in car_makers is TEXT. That seems like a problem. Wait, maybe there's a mistake in the schema description. Because a foreign key from a TEXT field to a NUMBER field doesn't make sense. Unless the Country in car_makers is actually a string that matches the CountryName. But according to the foreign key comment, it's car_makers.Country -> countries.CountryId. But CountryId is a NUMBER. So perhaps there's a data type inconsistency here. But maybe in the actual database, the Country in car_makers is a string that corresponds to the CountryName. Because otherwise, the foreign key wouldn't work. Because you can't have a foreign key from TEXT to NUMBER unless there's some conversion, which SQLite might handle, but it's not standard.\n\nWait, the user provided the schema as given. So according to the schema, the foreign key is car_makers.Country (TEXT) references countries.CountryId (NUMBER). That's a problem because you can't have a foreign key from TEXT to NUMBER. Unless the Country in car_makers is actually a string that matches the CountryName. Because otherwise, the foreign key relationship is invalid. So perhaps the schema has a mistake here, but the user is presenting it as is.\n\nAssuming that the foreign key is correctly set up, perhaps the Country in car_makers is actually a string that matches the CountryName. Because otherwise, the foreign key can't exist. So maybe the schema's foreign key comment is incorrect, and the actual relationship is car_makers.Country references countries.CountryName. Because otherwise, the data types don't match.\n\nBut according to the schema provided, the foreign key is car_makers.Country -> countries.CountryId. But CountryId is a NUMBER, and Country is TEXT. That's a problem. So perhaps the schema has an error here, but the user is presenting it as is. So maybe the actual data in car_makers.Country is the CountryName, not the CountryId. Because otherwise, the foreign key can't be enforced. So perhaps the foreign key comment is wrong, and the correct relationship is car_makers.Country references countries.CountryName.\n\nIn that case, the original query's join condition is correct (c.CountryName = cm.Country), but the foreign key comment is incorrect. But the user's question is whether the SQL is correct given the schema. So according to the schema as provided, the foreign key is car_makers.Country -> countries.CountryId. But since CountryId is a NUMBER and Country is TEXT, that's a problem. So perhaps the schema has a mistake, but the user is to work with it as given.\n\nBut in the SQL query, the join is on c.CountryName = cm.Country. If the foreign key is supposed to be on CountryId, then the correct join should be c.CountryId = cm.Country. But cm.Country is TEXT, and c.CountryId is NUMBER. So that would not work. So there's a data type mismatch here.\n\nThis suggests that the schema's foreign key definition is incorrect. Because you can't have a foreign key from TEXT to NUMBER. So perhaps the correct foreign key is car_makers.Country references countries.CountryName. Which would make the join condition correct as in the original query.\n\nBut given the schema as provided, the foreign key is car_makers.Country -> countries.CountryId. Which is a TEXT to NUMBER reference, which is invalid. So perhaps the schema has a mistake, but the user is to proceed with the given schema.\n\nAssuming that the foreign key is correctly set up (even if the schema has a data type inconsistency), the correct join should be on the foreign key. So if car_makers.Country is supposed to reference countries.CountryId, then the join should be c.CountryId = cm.Country. But since cm.Country is TEXT and c.CountryId is NUMBER, that's a problem. So perhaps the actual data in cm.Country is the CountryName, not the CountryId. Because otherwise, the foreign key can't exist.\n\nThis is a bit confusing. But given that the user's current SQL uses c.CountryName = cm.Country, and the foreign key comment says car_makers.Country -> countries.CountryId, there's a discrepancy. So perhaps the correct approach is to join on CountryId, but since the data types don't match, maybe the Country in car_makers is actually the CountryName. So the foreign key comment is wrong, and the correct join is on CountryName.\n\nIn that case, the original query is correct. But according to the schema's foreign key definition, it's supposed to be CountryId. So this is conflicting.\n\nAlternatively, maybe the car_makers.Country field is a string that matches the CountryName, and the foreign key is actually to CountryName, not CountryId. So the schema's foreign key comment is incorrect. In that case, the original query is correct.\n\nBut the user is asking whether the SQL is correct given the schema. So according to the schema as provided, the foreign key is car_makers.Country -> countries.CountryId. So the correct join should be on c.CountryId = cm.Country. But since cm.Country is TEXT and c.CountryId is NUMBER, that's a problem. So perhaps the schema has an error, but the user's SQL is using CountryName, which would be correct if the foreign key is actually to CountryName.\n\nThis is a bit of a dilemma. But given that the user's current SQL uses CountryName, and the foreign key comment says CountryId, there's a conflict. So perhaps the correct fix is to change the join condition to use CountryId, but that would require cm.Country to be a NUMBER, which it's not. So that's impossible.\n\nAlternatively, maybe the car_makers.Country field is actually the CountryName, and the foreign key comment is wrong. In that case, the original query is correct.\n\nBut given the schema as provided, the foreign key is car_makers.Country -> countries.CountryId. So the correct join should be on c.CountryId = cm.Country. But since cm.Country is TEXT, this would not work. So perhaps the schema has a mistake, and the correct foreign key is to CountryName.\n\nIn that case, the original query is correct. But according to the schema's foreign key definition, it's supposed to be CountryId. So the user's SQL is incorrect because it's joining on CountryName instead of CountryId. But since the data types don't match, that's impossible. So perhaps the correct approach is to assume that the foreign key is actually to CountryName, making the original query correct.\n\nAlternatively, maybe the car_makers.Country field is a string that matches the CountryName, and the foreign key is to CountryName, despite the schema comment. In that case, the original query is correct.\n\nBut given the schema as provided, the foreign key is to CountryId. So the correct join should be on c.CountryId = cm.Country. But since cm.Country is TEXT, this would not work. So perhaps the schema has an error, and the correct fix is to change the join to CountryName.\n\nBut the user is to fix the SQL based on the given schema. So according to the schema, the foreign key is car_makers.Country -> countries.CountryId. So the correct join should be on c.CountryId = cm.Country. But since cm.Country is TEXT, this is a data type mismatch. So perhaps the schema is incorrect, but the user's SQL is using CountryName, which would be correct if the foreign key is to CountryName.\n\nThis is a bit of a mess. But given that the user's current SQL uses CountryName, and the foreign key comment says CountryId, there's a conflict. So the correct fix would be to change the join condition to use CountryId, but that's not possible because of data types. Therefore, the schema must have an error, and the correct join is on CountryName. Hence, the original SQL is correct.\n\nWait, but the user's question is whether the SQL correctly answers the question given the schema. If the schema",
       "pred_empty": false,
       "ex_score": 0,
-      "reason": "wrong_result"
+      "reason": "execution_error"
     },
     {
       "index": 44,
@@ -497,7 +497,7 @@
       "db_id": "car_1",
       "hardness": "extra",
       "gold_sql": "select t1.id ,  t1.maker from car_makers as t1 join model_list as t2 on t1.id  =  t2.maker group by t1.id having count(*)  >=  2 intersect select t1.id ,  t1.maker from car_makers as t1 join model_list as t2 on t1.id  =  t2.maker join car_names as t3 on t2.model  =  t3.model group by t1.id having count(*)  >  3;",
-      "pred_sql": "SELECT cm.Id, cm.Maker\nFROM car_makers cm\nWHERE (SELECT COUNT(*) FROM car_makers) > 3\nAND cm.Id IN (\n    SELECT ml.Maker\n    FROM model_list ml\n    GROUP BY ml.Maker\n    HAVING COUNT(*) >= 2\n);",
+      "pred_sql": "SELECT cm.Id, cm.Maker\nFROM car_makers cm\nJOIN model_list ml ON cm.Id = ml.Maker\nGROUP BY cm.Id, cm.Maker\nHAVING COUNT(ml.ModelId) >= 2\nAND (SELECT COUNT(*) FROM (\n    SELECT cm2.Id\n    FROM car_makers cm2\n    JOIN model_list ml2 ON cm2.Id = ml2.Maker\n    GROUP BY cm2.Id\n    HAVING COUNT(ml2.ModelId) >= 2\n)) > 3;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -508,10 +508,10 @@
       "db_id": "car_1",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Id ,  T1.Maker FROM CAR_MAKERS AS T1 JOIN MODEL_LIST AS T2 ON T1.Id  =  T2.Maker GROUP BY T1.Id HAVING count(*)  >=  2 INTERSECT SELECT T1.Id ,  T1.Maker FROM CAR_MAKERS AS T1 JOIN MODEL_LIST AS T2 ON T1.Id  =  T2.Maker JOIN CAR_NAMES AS T3 ON T2.model  =  T3.model GROUP BY T1.Id HAVING count(*)  >  3;",
-      "pred_sql": "SELECT cm.Id, cm.Maker\nFROM car_makers cm\nWHERE cm.Id IN (\n    SELECT Maker FROM model_list GROUP BY Maker HAVING COUNT(*) >= 2\n)\nAND cm.Id IN (\n    SELECT cn.MakeId FROM car_names cn\n    JOIN cars_data cd ON cn.Model = cd.Id\n    GROUP BY cn.MakeId HAVING COUNT(*) > 3\n)",
+      "pred_sql": "WITH model_counts AS (\n    SELECT car_makers.Id, car_makers.Maker, COUNT(*) as model_count\n    FROM model_list\n    JOIN car_makers ON model_list.Maker = car_makers.Id\n    GROUP BY car_makers.Id\n    HAVING COUNT(*) >= 2\n),\ncar_counts AS (\n    SELECT car_makers.Id, COUNT(*) as car_count\n    FROM cars_data\n    JOIN car_names ON cars_data.Id = car_names.MakeId\n    JOIN model_list ON car_names.Model = model_list.Model\n    JOIN car_makers ON model_list.Maker = car_makers.Id\n    GROUP BY car_makers.Id\n    HAVING COUNT(*) > 3\n)\nSELECT mc.Id, mc.Maker\nFROM model_counts mc\nJOIN car_counts cc ON mc.Id = cc.Id;",
       "pred_empty": false,
-      "ex_score": 0,
-      "reason": "wrong_result"
+      "ex_score": 1,
+      "reason": "correct"
     },
     {
       "index": 46,
@@ -519,10 +519,10 @@
       "db_id": "car_1",
       "hardness": "extra",
       "gold_sql": "SELECT T1.countryId ,  T1.CountryName FROM Countries AS T1 JOIN CAR_MAKERS AS T2 ON T1.CountryId  =  T2.Country GROUP BY T1.countryId HAVING count(*)  >  3 UNION SELECT T1.countryId ,  T1.CountryName FROM Countries AS T1 JOIN CAR_MAKERS AS T2 ON T1.CountryId  =  T2.Country JOIN MODEL_LIST AS T3 ON T2.Id  =  T3.Maker WHERE T3.Model  =  'fiat';",
-      "pred_sql": "SELECT DISTINCT c.CountryId, c.CountryName\nFROM countries c\nWHERE (\n    SELECT COUNT(*)\n    FROM car_makers cm\n    WHERE cm.Country = c.CountryId\n) > 3\nOR EXISTS (\n    SELECT 1\n    FROM car_makers cm\n    JOIN model_list ml ON cm.Id = ml.Maker\n    WHERE cm.Country = c.CountryId\n    AND ml.Model = 'fiat'\n);",
+      "pred_sql": "SELECT c.CountryId, c.CountryName\nFROM countries c\nJOIN car_makers cm ON c.CountryId = cm.Country\nJOIN model_list ml ON cm.Id = ml.Maker\nWHERE ml.Model = 'fiat'",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "wrong_result"
     },
     {
       "index": 47,
@@ -530,10 +530,10 @@
       "db_id": "car_1",
       "hardness": "extra",
       "gold_sql": "select t1.countryid ,  t1.countryname from countries as t1 join car_makers as t2 on t1.countryid  =  t2.country group by t1.countryid having count(*)  >  3 union select t1.countryid ,  t1.countryname from countries as t1 join car_makers as t2 on t1.countryid  =  t2.country join model_list as t3 on t2.id  =  t3.maker where t3.model  =  'fiat';",
-      "pred_sql": "SELECT c.CountryId, c.CountryName\nFROM countries c\nJOIN car_makers cm ON c.CountryId = cm.Country\nGROUP BY c.CountryId\nHAVING COUNT(cm.Id) > 3\nUNION\nSELECT c.CountryId, c.CountryName\nFROM countries c\nJOIN car_makers cm ON c.CountryId = cm.Country\nWHERE cm.Maker = 'Fiat'",
+      "pred_sql": "SELECT CountryId, CountryName\nFROM countries\nWHERE CountryId IN (\n    SELECT Country\n    FROM car_makers\n    GROUP BY Country\n    HAVING COUNT(*) > 3\n)\n\nBut here, the subquery is selecting Country (TEXT) from car_makers, grouped by Country, and counting. Then the outer query checks if CountryId (NUMBER) is in that list of TEXT values. But since CountryId is a NUMBER, and the subquery returns TEXT, this might not work correctly. For example, if a country has CountryId 1, and car_makers has Country '1', then the subquery returns '1', and the outer query checks if 1 is in ('1'), which in SQLite would be true because 1 = '1' is true. But this is a bit of a hack. However, the correct way would be to join car_makers with countries on car_makers.Country = countries.CountryId, then group by countries.CountryId and count.\n\nSo the first part of the query should be:\n\nSELECT c.CountryId, c.CountryName\nFROM countries c\nJOIN car_makers cm ON c.CountryId = cm.Country\nGROUP BY c.CountryId\nHAVING COUNT(*) > 3\n\nBut in the current SQL, it's using a subquery with IN, which is less efficient but might work. However, the problem is that the subquery is selecting Country (TEXT) from car_makers, and the outer query is checking CountryId (NUMBER) against that. So if the Country in car_makers is stored as a string that matches the CountryId (NUMBER), then it's okay. But the schema says that car_makers.Country is TEXT and countries.CountryId is NUMBER. So the foreign key is car_makers.Country -> countries.CountryId. So the correct join would be on car_makers.Country = countries.CountryId. But since one is TEXT and the other is NUMBER, SQLite might handle it, but it's better to cast. However, in the current SQL, the subquery is selecting Country (TEXT) from car_makers, and the outer query is checking CountryId (NUMBER) against that. So if the Country in car_makers is '1', then the subquery returns '1', and the outer query's CountryId is 1. In SQLite, 1 = '1' is true, so the IN clause would work. But this is a bit of a workaround. However, the main issue is that the current SQL's first part is correct in logic but might have a type mismatch. However, the bigger problem is the second part of the query.\n\nThe second part is:\n\nSELECT CountryId, CountryName\nFROM countries\nWHERE CountryId IN (\n    SELECT Country\n    FROM car_makers\n    WHERE Maker = 'Fiat'\n)\n\nHere, the subquery selects Country (TEXT) from car_makers where Maker is 'Fiat'. Then the outer query checks if CountryId (NUMBER) is in that list. Again, same type issue. But if the Country in car_makers is the CountryId as a string, then it's okay. However, the problem is that the question says \"produce fiat model\". Wait, the question says \"produce fiat model\". Wait, the original question says: \"What are the ids and names of all countries that either have more than 3 car makers or produce fiat model ?\"\n\nWait, \"produce fiat model\" \u2013 does that mean countries where the car_makers' Maker is 'Fiat'? Because the car_makers table has a Maker column. So the second condition is countries that have a car maker with Maker = 'Fiat'. So the correct approach is to find countries where there exists a car_maker with Maker = 'Fiat' and that country's CountryId matches the car_makers.Country.\n\nBut in the current SQL, the second part is selecting countries where CountryId is in the list of Country (TEXT) from car_makers where Maker = 'Fiat'. So that's correct in logic, but the type mismatch between CountryId (NUMBER) and Country (TEXT) might cause issues. However, in SQLite, when you compare a NUMBER and a TEXT, it might convert the TEXT to NUMBER. For example",
       "pred_empty": false,
       "ex_score": 0,
-      "reason": "wrong_result"
+      "reason": "execution_error"
     },
     {
       "index": 48,
@@ -541,7 +541,7 @@
       "db_id": "flight_2",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"APG\" INTERSECT SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"CVO\"",
-      "pred_sql": "SELECT a.Airline\nFROM airlines a\nJOIN flights f ON a.uid = f.Airline\nWHERE f.SourceAirport IN ('APG', 'CVO')\nGROUP BY a.Airline\nHAVING COUNT(DISTINCT f.SourceAirport) = 2;",
+      "pred_sql": "SELECT a.Airline\nFROM airlines a\nJOIN flights f ON a.uid = f.Airline\nWHERE f.SourceAirport = 'APG'\nINTERSECT\nSELECT a.Airline\nFROM airlines a\nJOIN flights f ON a.uid = f.Airline\nWHERE f.SourceAirport = 'CVO'",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -552,7 +552,7 @@
       "db_id": "flight_2",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"APG\" INTERSECT SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"CVO\"",
-      "pred_sql": "SELECT a.Airline\nFROM airlines a\nJOIN flights f ON a.uid = f.Airline\nWHERE f.SourceAirport IN ('APG', 'CVO')\nGROUP BY a.uid\nHAVING COUNT(DISTINCT f.SourceAirport) = 2;",
+      "pred_sql": "SELECT a.Airline\nFROM flights f\nJOIN airlines a ON f.Airline = a.uid\nWHERE f.SourceAirport IN ('APG', 'CVO')\nGROUP BY f.Airline\nHAVING COUNT(DISTINCT f.SourceAirport) = 2;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -563,7 +563,7 @@
       "db_id": "flight_2",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"CVO\" EXCEPT SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"APG\"",
-      "pred_sql": "SELECT a.Airline\nFROM airlines a\nWHERE EXISTS (\n    SELECT 1 FROM flights f WHERE f.Airline = a.uid AND f.SourceAirport = 'CVO'\n)\nAND NOT EXISTS (\n    SELECT 1 FROM flights f WHERE f.Airline = a.uid AND f.SourceAirport = 'APG'\n);",
+      "pred_sql": "SELECT DISTINCT a.Airline\nFROM airlines a\nWHERE EXISTS (\n    SELECT 1 FROM flights f WHERE f.Airline = a.uid AND f.SourceAirport = 'CVO'\n)\nAND NOT EXISTS (\n    SELECT 1 FROM flights f WHERE f.Airline = a.uid AND f.SourceAirport = 'APG'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -574,7 +574,7 @@
       "db_id": "flight_2",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"CVO\" EXCEPT SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"APG\"",
-      "pred_sql": "SELECT a.Airline\nFROM airlines a\nJOIN flights f ON a.uid = f.Airline\nWHERE f.SourceAirport = 'CVO';",
+      "pred_sql": "SELECT Airline FROM flights WHERE SourceAirport = 'CVO' AND Airline NOT IN (SELECT Airline FROM flights WHERE SourceAirport = 'APG');",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -585,7 +585,7 @@
       "db_id": "flight_2",
       "hardness": "hard",
       "gold_sql": "SELECT AirportName FROM Airports WHERE AirportCode NOT IN (SELECT SourceAirport FROM Flights UNION SELECT DestAirport FROM Flights)",
-      "pred_sql": "SELECT AirportName\nFROM airports\nWHERE NOT EXISTS (\n    SELECT 1 FROM flights\n    WHERE flights.SourceAirport = airports.AirportCode\n    OR flights.DestAirport = airports.AirportCode\n);",
+      "pred_sql": "SELECT AirportName\nFROM airports\nWHERE NOT EXISTS (\n    SELECT 1 FROM flights f \n    WHERE f.SourceAirport = airports.AirportCode \n    OR f.DestAirport = airports.AirportCode\n)",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -596,7 +596,7 @@
       "db_id": "flight_2",
       "hardness": "hard",
       "gold_sql": "SELECT AirportName FROM Airports WHERE AirportCode NOT IN (SELECT SourceAirport FROM Flights UNION SELECT DestAirport FROM Flights)",
-      "pred_sql": "SELECT AirportCode, AirportName, City, Country, CountryAbbrev\nFROM airports\nWHERE AirportCode NOT IN (\n    SELECT SourceAirport FROM flights\n    UNION\n    SELECT DestAirport FROM flights\n);",
+      "pred_sql": "SELECT AirportCode\nFROM airports\nWHERE AirportCode NOT IN (\n    SELECT SourceAirport FROM flights\n    UNION\n    SELECT DestAirport FROM flights\n);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -607,7 +607,7 @@
       "db_id": "employee_hire_evaluation",
       "hardness": "hard",
       "gold_sql": "SELECT name ,  LOCATION ,  district FROM shop ORDER BY number_products DESC",
-      "pred_sql": "SELECT Name, Location, District\nFROM shop\nORDER BY Number_products DESC",
+      "pred_sql": "SELECT Name, Location, District FROM shop ORDER BY Number_products DESC;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -629,7 +629,7 @@
       "db_id": "employee_hire_evaluation",
       "hardness": "hard",
       "gold_sql": "SELECT name FROM shop WHERE number_products  >  (SELECT avg(number_products) FROM shop)",
-      "pred_sql": "SELECT Name\nFROM shop\nWHERE Number_products > (SELECT AVG(Number_products) FROM shop);",
+      "pred_sql": "SELECT Name FROM shop WHERE Number_products > (SELECT AVG(Number_products) FROM shop);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -651,7 +651,7 @@
       "db_id": "employee_hire_evaluation",
       "hardness": "hard",
       "gold_sql": "SELECT name FROM employee WHERE Employee_ID NOT IN (SELECT Employee_ID FROM evaluation)",
-      "pred_sql": "SELECT e.Name\nFROM employee e\nLEFT JOIN evaluation ev ON e.Employee_ID = ev.Employee_ID\nWHERE ev.Employee_ID IS NULL;",
+      "pred_sql": "SELECT e.Name FROM employee e LEFT JOIN evaluation ev ON CAST(e.Employee_ID AS TEXT) = ev.Employee_ID WHERE ev.Employee_ID IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -662,7 +662,7 @@
       "db_id": "employee_hire_evaluation",
       "hardness": "hard",
       "gold_sql": "SELECT name FROM employee WHERE Employee_ID NOT IN (SELECT Employee_ID FROM evaluation)",
-      "pred_sql": "SELECT e.Name\nFROM employee e\nLEFT JOIN evaluation ev ON e.Employee_ID = ev.Employee_ID\nWHERE ev.Employee_ID IS NULL;",
+      "pred_sql": "SELECT Name\n        FROM employee\n        WHERE Employee_ID NOT IN (SELECT Employee_ID FROM evaluation);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -673,7 +673,7 @@
       "db_id": "employee_hire_evaluation",
       "hardness": "hard",
       "gold_sql": "SELECT name FROM shop WHERE shop_id NOT IN (SELECT shop_id FROM hiring)",
-      "pred_sql": "SELECT s.Name\nFROM shop s\nLEFT JOIN hiring h ON s.Shop_ID = h.Shop_ID\nWHERE h.Shop_ID IS NULL;",
+      "pred_sql": "SELECT s.Name FROM shop s LEFT JOIN hiring h ON s.Shop_ID = h.Shop_ID WHERE h.Shop_ID IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -695,7 +695,7 @@
       "db_id": "employee_hire_evaluation",
       "hardness": "extra",
       "gold_sql": "SELECT district FROM shop WHERE Number_products  <  3000 INTERSECT SELECT district FROM shop WHERE Number_products  >  10000",
-      "pred_sql": "SELECT District\nFROM shop\nGROUP BY District\nHAVING MIN(Number_products) < 3000 AND MAX(Number_products) > 10000;",
+      "pred_sql": "SELECT District\nFROM shop\nGROUP BY District\nHAVING COUNT(CASE WHEN Number_products < 3000 THEN 1 END) > 0\n   AND COUNT(CASE WHEN Number_products > 10000 THEN 1 END) > 0;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -706,10 +706,10 @@
       "db_id": "employee_hire_evaluation",
       "hardness": "extra",
       "gold_sql": "SELECT district FROM shop WHERE Number_products  <  3000 INTERSECT SELECT district FROM shop WHERE Number_products  >  10000",
-      "pred_sql": "SELECT District\nFROM shop\nGROUP BY District\nHAVING MIN(Number_products) < 3000 AND MAX(Number_products) > 10000;",
+      "pred_sql": "SELECT District\nFROM shop\nGROUP BY District\nHAVING MIN(Number_products) < 3000 AND MAX(Number_products) > 10000;\n\nBut wait, in SQLite, the HAVING clause can use aggregate functions. So this should work. So why would the user think it's incorrect? Maybe there's a data type issue. Wait, the Number_products is NUMBER, which in SQLite is treated as a numeric type. So the comparison should work. So the current query is correct. But maybe the user's question is a trick. Wait, the problem says \"both shops selling less than 3000 products and shops selling more than 10000 products\". So in each district, there must be at least one shop with <3000 and at least one with >10000. The current query's HAVING clause checks exactly that. So the current SQL is correct. But maybe the user's current SQL is correct, but perhaps there's a mistake in the schema. Wait, looking at the schema: the shop table has Number_products as NUMBER. So that's correct. So the current SQL should be correct. But maybe the user's current SQL is correct, but perhaps the answer is that it's correct. But the user is asking to fix it if not. Wait, but maybe there's a mistake. Let me think again.\n\nWait, the problem is that the current query uses MIN and MAX. But what if a district has multiple shops, but all are between 3000 and 10000. Then MIN would be >=3000 and MAX <=10000, so the HAVING clause would exclude them. Which is correct. If a district has a shop with 2000 and another with 12000, then MIN is 2000 <3000, MAX is 12000>10000. So the HAVING clause includes it. Which is correct. So the current query is correct. But why is the user asking? Maybe there's a mistake in the current SQL. Wait, perhaps the current SQL is correct, but the user is testing. But according to the problem statement, the user wants to know if the current SQL is correct. If not, fix it. So if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Wait, perhaps the problem is that the current SQL uses MIN and MAX, but the correct approach is to use two separate conditions. For example, using EXISTS or having two separate checks. But in this case, the MIN and MAX approach is equivalent. Because if there's at least one shop under 3000, the MIN will be under 3000. If there's at least one over 10000, the MAX will be over 10000. So the HAVING clause correctly captures both conditions. Therefore, the current SQL is correct. But maybe the user's current SQL is correct, but perhaps there's a typo. Wait, looking at the current SQL:\n\nSELECT District\nFROM shop\nGROUP BY District\nHAVING MIN(Number_products) < 3000 AND MAX(Number_products) > 10000;\n\nYes, that's correct. So the answer is that the current SQL is correct, but the user is asking to fix it if not. Wait, but maybe the problem is that the current SQL uses MIN and MAX, but the correct way is to check that there exists at least one shop in the district with <3000 and another with >10000. But the MIN and MAX approach does exactly that. Because if the minimum is less than 3000, there's at least one shop with that. If the maximum is more than 10000, there's at least one shop with that. So the current query is correct. Therefore, the answer is that the current SQL is correct, but the user might have a different expectation. Wait, but maybe the problem is that the current SQL uses MIN and MAX, but the correct approach is to use two separate HAVING conditions. Wait, no. Because MIN and MAX are aggregates. So the current query is correct. So perhaps the user's current SQL is correct, but maybe there's a mistake in the schema. Wait, looking at the schema: the shop table has Number_products as NUMBER. So that's correct. So the current SQL is correct. But why is the user asking? Maybe the user made a mistake in the current SQL. Wait, perhaps the current SQL is correct, but the answer is that it's correct. But the user's instruction says: \"Does this SQL correctly answer the question given the schema? If not, fix it and return only the corrected SQL, no explanation.\" So if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Wait, perhaps the problem is that the current SQL uses MIN and MAX, but the correct approach is to check that there exists at least one shop in the district with <3000 and at least one with >10000. But the MIN and MAX approach does that. So the current SQL is correct. Therefore, the answer is that the current SQL is correct, but the user might have a different expectation. Wait, but maybe the problem is that the current SQL uses MIN and MAX, but the correct way is to use two separate conditions. For example, using a subquery or having two separate HAVING clauses. But in this case, the MIN and MAX approach is sufficient. So the current SQL is correct. Therefore, the answer is to return the same SQL. But perhaps the user's current SQL is correct, but the answer is that it's correct",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "execution_error"
     },
     {
       "index": 64,
@@ -750,7 +750,7 @@
       "db_id": "cre_Doc_Template_Mgt",
       "hardness": "hard",
       "gold_sql": "SELECT document_id ,  template_id ,  Document_Description FROM Documents WHERE document_name  =  \"Robbin CV\"",
-      "pred_sql": "SELECT Document_ID, Template_ID, Document_Description\nFROM Documents\nWHERE Document_Name = 'Robbin CV';",
+      "pred_sql": "SELECT Document_ID, Template_ID, Document_Description FROM Documents WHERE Document_Name = 'Robbin CV';",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -761,7 +761,7 @@
       "db_id": "cre_Doc_Template_Mgt",
       "hardness": "extra",
       "gold_sql": "SELECT template_id FROM Templates EXCEPT SELECT template_id FROM Documents",
-      "pred_sql": "SELECT Template_ID FROM Templates WHERE Template_ID NOT IN (SELECT Template_ID FROM Documents);",
+      "pred_sql": "SELECT T.Template_ID\nFROM Templates T\nLEFT JOIN Documents D ON T.Template_ID = D.Template_ID\nWHERE D.Template_ID IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -805,7 +805,7 @@
       "db_id": "cre_Doc_Template_Mgt",
       "hardness": "extra",
       "gold_sql": "SELECT template_type_code FROM Templates EXCEPT SELECT template_type_code FROM Templates AS T1 JOIN Documents AS T2 ON T1.template_id  =  T2.template_id",
-      "pred_sql": "SELECT Template_Type_Code\nFROM Ref_Template_Types\nWHERE Template_Type_Code NOT IN (\n    SELECT DISTINCT T.Template_Type_Code\n    FROM Templates T\n    JOIN Documents D ON T.Template_ID = D.Template_ID\n);",
+      "pred_sql": "SELECT Template_Type_Code\nFROM Ref_Template_Types\nWHERE Template_Type_Code NOT IN (\n    SELECT T.Template_Type_Code\n    FROM Templates T\n    JOIN Documents D ON T.Template_ID = D.Template_ID\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -827,10 +827,10 @@
       "db_id": "cre_Doc_Template_Mgt",
       "hardness": "hard",
       "gold_sql": "SELECT T1.document_id ,  T2.document_name ,  count(*) FROM Paragraphs AS T1 JOIN Documents AS T2 ON T1.document_id  =  T2.document_id GROUP BY T1.document_id",
-      "pred_sql": "SELECT d.Document_ID, d.Document_Name, COUNT(p.Paragraph_ID) AS Paragraph_Count\nFROM Documents d\nLEFT JOIN Paragraphs p ON d.Document_ID = p.Document_ID\nGROUP BY d.Document_ID, d.Document_Name;",
+      "pred_sql": "SELECT Document_ID, Document_Name, COUNT(Paragraph_ID) AS Paragraph_Count\nFROM Documents\nLEFT JOIN Paragraphs ON Documents.Document_ID = Paragraphs.Document_ID\nGROUP BY Document_ID, Document_Name;",
       "pred_empty": false,
       "ex_score": 0,
-      "reason": "wrong_result"
+      "reason": "execution_error"
     },
     {
       "index": 75,
@@ -849,7 +849,7 @@
       "db_id": "cre_Doc_Template_Mgt",
       "hardness": "extra",
       "gold_sql": "SELECT document_id FROM Paragraphs WHERE paragraph_text  =  'Brazil' INTERSECT SELECT document_id FROM Paragraphs WHERE paragraph_text  =  'Ireland'",
-      "pred_sql": "SELECT Document_ID\nFROM Paragraphs\nWHERE Paragraph_Text IN ('Brazil', 'Ireland')\nGROUP BY Document_ID\nHAVING COUNT(DISTINCT Paragraph_Text) = 2;",
+      "pred_sql": "SELECT d.Document_ID\nFROM Documents d\nJOIN Paragraphs p1 ON d.Document_ID = p1.Document_ID\nJOIN Paragraphs p2 ON d.Document_ID = p2.Document_ID\nWHERE p1.Paragraph_Text = 'Brazil'\n  AND p2.Paragraph_Text = 'Ireland';",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -860,7 +860,7 @@
       "db_id": "cre_Doc_Template_Mgt",
       "hardness": "extra",
       "gold_sql": "SELECT document_id FROM Paragraphs WHERE paragraph_text  =  'Brazil' INTERSECT SELECT document_id FROM Paragraphs WHERE paragraph_text  =  'Ireland'",
-      "pred_sql": "SELECT DISTINCT p1.Document_ID\nFROM Paragraphs p1\nWHERE p1.Paragraph_Text LIKE '%Brazil%'\n  AND EXISTS (\n    SELECT 1 \n    FROM Paragraphs p2 \n    WHERE p2.Document_ID = p1.Document_ID \n      AND p2.Paragraph_Text LIKE '%Ireland%'\n  )",
+      "pred_sql": "SELECT Document_ID FROM Paragraphs WHERE Paragraph_Text LIKE '%Brazil%'\nINTERSECT\nSELECT Document_ID FROM Paragraphs WHERE Paragraph_Text LIKE '%Ireland%';",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -893,7 +893,7 @@
       "db_id": "museum_visit",
       "hardness": "hard",
       "gold_sql": "SELECT name FROM museum WHERE num_of_staff  >  (SELECT min(num_of_staff) FROM museum WHERE open_year  >  2010)",
-      "pred_sql": "SELECT Name\nFROM museum\nWHERE Num_of_Staff > (\n    SELECT MIN(Num_of_Staff)\n    FROM museum\n    WHERE Open_Year > '2010'\n);",
+      "pred_sql": "SELECT Name FROM museum WHERE Num_of_Staff > (SELECT MIN(Num_of_Staff) FROM museum WHERE Open_Year > '2010');",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -904,7 +904,7 @@
       "db_id": "museum_visit",
       "hardness": "hard",
       "gold_sql": "SELECT t1.id ,  t1.name ,  t1.age FROM visitor AS t1 JOIN visit AS t2 ON t1.id  =  t2.visitor_id GROUP BY t1.id HAVING count(*)  >  1",
-      "pred_sql": "SELECT v.ID, v.Name, v.Age\nFROM visitor v\nINNER JOIN visit vis ON v.ID = vis.visitor_ID\nGROUP BY v.ID\nHAVING COUNT(*) > 1;",
+      "pred_sql": "SELECT v.ID, v.Name, v.Age\nFROM visitor v\nJOIN visit vis ON v.ID = vis.visitor_ID\nGROUP BY v.ID\nHAVING COUNT(*) > 1;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -915,7 +915,7 @@
       "db_id": "museum_visit",
       "hardness": "hard",
       "gold_sql": "SELECT t2.visitor_id ,  t1.name ,  t1.Level_of_membership FROM visitor AS t1 JOIN visit AS t2 ON t1.id  =  t2.visitor_id GROUP BY t2.visitor_id ORDER BY sum(t2.Total_spent) DESC LIMIT 1",
-      "pred_sql": "SELECT v.ID, v.Name, v.Level_of_membership\nFROM visitor v\nJOIN visit vis ON v.ID = vis.visitor_ID\nGROUP BY v.ID\nORDER BY SUM(vis.Total_spent) DESC\nLIMIT 1;",
+      "pred_sql": "SELECT v.ID, v.Name, v.Level_of_membership\nFROM visitor v\nJOIN visit vis ON v.ID = vis.visitor_ID\nGROUP BY v.ID\nHAVING SUM(vis.Total_spent) = (\n    SELECT MAX(total)\n    FROM (\n        SELECT SUM(vis2.Total_spent) AS total\n        FROM visit vis2\n        GROUP BY vis2.visitor_ID\n    )\n)",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -937,7 +937,7 @@
       "db_id": "museum_visit",
       "hardness": "extra",
       "gold_sql": "SELECT t1.name FROM visitor AS t1 JOIN visit AS t2 ON t1.id  =  t2.visitor_id JOIN museum AS t3 ON t3.Museum_ID  =  t2.Museum_ID WHERE t3.open_year  <  2009 INTERSECT SELECT t1.name FROM visitor AS t1 JOIN visit AS t2 ON t1.id  =  t2.visitor_id JOIN museum AS t3 ON t3.Museum_ID  =  t2.Museum_ID WHERE t3.open_year  >  2011",
-      "pred_sql": "SELECT v.Name\nFROM visitor v\nJOIN visit vis ON v.ID = vis.visitor_ID\nJOIN museum m ON vis.Museum_ID = m.Museum_ID\nWHERE m.Open_Year < '2009' OR m.Open_Year > '2011'\nGROUP BY v.ID, v.Name\nHAVING COUNT(CASE WHEN m.Open_Year < '2009' THEN 1 END) > 0\n   AND COUNT(CASE WHEN m.Open_Year > '2011' THEN 1 END) > 0",
+      "pred_sql": "SELECT v.Name\nFROM visitor v\nJOIN visit vis ON v.ID = vis.visitor_ID\nJOIN museum m ON vis.Museum_ID = m.Museum_ID\nGROUP BY v.ID\nHAVING COUNT(CASE WHEN m.Open_Year < '2009' THEN 1 END) > 0\nAND COUNT(CASE WHEN m.Open_Year > '2011' THEN 1 END) > 0;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -948,10 +948,10 @@
       "db_id": "museum_visit",
       "hardness": "hard",
       "gold_sql": "SELECT count(*) FROM visitor WHERE id NOT IN (SELECT t2.visitor_id FROM museum AS t1 JOIN visit AS t2 ON t1.Museum_ID  =  t2.Museum_ID WHERE t1.open_year  >  2010)",
-      "pred_sql": "SELECT COUNT(*) \nFROM visitor v\nWHERE v.ID NOT IN (\n    SELECT DISTINCT v2.visitor_ID\n    FROM visit v2\n    JOIN museum m ON v2.Museum_ID = m.Museum_ID\n    WHERE m.Open_Year > '2010'\n)",
+      "pred_sql": "SELECT COUNT(*) \nFROM visitor v\nWHERE v.ID NOT IN (\n    SELECT DISTINCT v2.ID\n    FROM visit v2\n    JOIN museum m ON v2.Museum_ID = m.Museum_ID\n    WHERE m.Open_Year > '2010'\n);",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "execution_error"
     },
     {
       "index": 86,
@@ -959,7 +959,7 @@
       "db_id": "wta_1",
       "hardness": "extra",
       "gold_sql": "SELECT winner_name FROM matches WHERE YEAR  =  2013 INTERSECT SELECT winner_name FROM matches WHERE YEAR  =  2016",
-      "pred_sql": "SELECT p.first_name, p.last_name\nFROM players p\nWHERE p.player_id IN (\n    SELECT m.winner_id\n    FROM matches m\n    WHERE m.year = 2013\n    INTERSECT\n    SELECT m.winner_id\n    FROM matches m\n    WHERE m.year = 2016\n);",
+      "pred_sql": "SELECT first_name, last_name\nFROM players\nWHERE player_id IN (\n    SELECT winner_id FROM matches WHERE year = 2013\n    INTERSECT\n    SELECT winner_id FROM matches WHERE year = 2016\n);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -970,7 +970,7 @@
       "db_id": "wta_1",
       "hardness": "extra",
       "gold_sql": "SELECT winner_name FROM matches WHERE YEAR  =  2013 INTERSECT SELECT winner_name FROM matches WHERE YEAR  =  2016",
-      "pred_sql": "SELECT p.first_name, p.last_name\nFROM players p\nWHERE p.player_id IN (\n    SELECT winner_id FROM matches WHERE year = 2013\n)\nAND p.player_id IN (\n    SELECT winner_id FROM matches WHERE year = 2016\n);",
+      "pred_sql": "SELECT DISTINCT p.first_name, p.last_name\nFROM players p\nWHERE p.player_id IN (SELECT winner_id FROM matches WHERE year = 2013)\nAND p.player_id IN (SELECT winner_id FROM matches WHERE year = 2016);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -992,7 +992,7 @@
       "db_id": "wta_1",
       "hardness": "extra",
       "gold_sql": "SELECT T1.country_code ,  T1.first_name FROM players AS T1 JOIN matches AS T2 ON T1.player_id  =  T2.winner_id WHERE T2.tourney_name  =  'WTA Championships' INTERSECT SELECT T1.country_code ,  T1.first_name FROM players AS T1 JOIN matches AS T2 ON T1.player_id  =  T2.winner_id WHERE T2.tourney_name  =  'Australian Open'",
-      "pred_sql": "SELECT DISTINCT p.first_name, p.country_code\nFROM players p\nJOIN matches m1 ON p.player_id = m1.winner_id\nJOIN matches m2 ON p.player_id = m2.winner_id\nWHERE m1.tourney_name = 'WTA Championships'\nAND m2.tourney_name = 'Australian Open';",
+      "pred_sql": "SELECT p.first_name, p.country_code\nFROM players p\nWHERE p.player_id IN (\n    SELECT m.winner_id\n    FROM matches m\n    WHERE m.tourney_name = 'WTA Championships'\n)\nAND p.player_id IN (\n    SELECT m.winner_id\n    FROM matches m\n    WHERE m.tourney_name = 'Australian Open'\n);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1003,7 +1003,7 @@
       "db_id": "wta_1",
       "hardness": "hard",
       "gold_sql": "SELECT T1.first_name ,  T1.country_code ,  T1.birth_date FROM players AS T1 JOIN matches AS T2 ON T1.player_id  =  T2.winner_id ORDER BY T2.winner_rank_points DESC LIMIT 1",
-      "pred_sql": "SELECT p.first_name, p.country_code, p.birth_date\nFROM matches m\nJOIN players p ON m.winner_id = p.player_id\nORDER BY m.winner_rank_points DESC\nLIMIT 1;",
+      "pred_sql": "SELECT p.first_name, p.country_code, p.birth_date\nFROM matches m\nJOIN players p ON m.winner_id = p.player_id\nWHERE m.winner_rank_points = (SELECT MAX(winner_rank_points) FROM matches);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1025,7 +1025,7 @@
       "db_id": "battle_death",
       "hardness": "hard",
       "gold_sql": "SELECT count(*) FROM battle WHERE id NOT IN ( SELECT lost_in_battle FROM ship WHERE tonnage  =  '225' );",
-      "pred_sql": "SELECT COUNT(*) FROM battle\nLEFT JOIN ship ON battle.id = ship.lost_in_battle AND ship.tonnage = '225'\nWHERE ship.id IS NULL;",
+      "pred_sql": "SELECT COUNT(*) FROM battle b\nLEFT JOIN ship s ON b.id = s.lost_in_battle AND s.tonnage = '225'\nWHERE s.id IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1036,7 +1036,7 @@
       "db_id": "battle_death",
       "hardness": "extra",
       "gold_sql": "SELECT T1.name ,  T1.date FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle WHERE T2.name  =  'Lettice' INTERSECT SELECT T1.name ,  T1.date FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle WHERE T2.name  =  'HMS Atalanta'",
-      "pred_sql": "SELECT b.name, b.date\nFROM battle b\nJOIN ship s ON b.id = s.lost_in_battle\nWHERE s.name IN ('Lettice', 'HMS Atalanta')\nGROUP BY b.id\nHAVING COUNT(DISTINCT s.name) = 2",
+      "pred_sql": "SELECT b.name, b.date\nFROM battle b\nWHERE b.id IN (\n    SELECT lost_in_battle FROM ship WHERE name = 'Lettice'\n)\nAND b.id IN (\n    SELECT lost_in_battle FROM ship WHERE name = 'HMS Atalanta'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1047,7 +1047,7 @@
       "db_id": "battle_death",
       "hardness": "extra",
       "gold_sql": "SELECT name ,  RESULT ,  bulgarian_commander FROM battle EXCEPT SELECT T1.name ,  T1.result ,  T1.bulgarian_commander FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle WHERE T2.location  =  'English Channel'",
-      "pred_sql": "SELECT b.name, b.result, b.bulgarian_commander\n        FROM battle b\n        WHERE NOT EXISTS (\n            SELECT 1\n            FROM ship s\n            WHERE s.lost_in_battle = b.id\n            AND s.location = 'English Channel'\n        )",
+      "pred_sql": "SELECT name, result, bulgarian_commander\n        FROM battle\n        WHERE NOT EXISTS (\n            SELECT 1\n            FROM ship\n            WHERE ship.lost_in_battle = battle.id\n            AND ship.location = 'English Channel'\n        );",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1058,10 +1058,10 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "hard",
       "gold_sql": "SELECT T1.first_name ,  T1.middle_name ,  T1.last_name ,  T1.student_id FROM Students AS T1 JOIN Student_Enrolment AS T2 ON T1.student_id  =  T2.student_id GROUP BY T1.student_id HAVING count(*)  =  2",
-      "pred_sql": "SELECT s.first_name, s.middle_name, s.last_name, s.student_id\nFROM Students s\nJOIN Student_Enrolment se ON s.student_id = se.student_id\nGROUP BY s.student_id, se.semester_id\nHAVING COUNT(DISTINCT se.degree_program_id) = 2;",
+      "pred_sql": "SELECT student_id\nFROM Student_Enrolment\nGROUP BY student_id, semester_id\nHAVING COUNT(DISTINCT degree_program_id) = 2\n\nThis groups each student and semester, then counts how many distinct degree programs they are enrolled in during that semester. If it's 2, then that student-semester pair is included. Then the outer query joins this with Students to get the student's details. The DISTINCT in the SELECT would remove duplicates if a student has multiple semesters where they meet the criteria. So the final result is each student once, even if they have multiple such semesters. Which is correct because the question is asking for the students, not the semesters.\n\nSo the current SQL is correct. But wait, the user is asking if the current SQL is correct. If not, fix it. But according to this analysis, it is correct. But maybe there's a mistake.\n\nWait, the Student_Enrolment table's structure: each row is a student enrolled in a degree program in a semester. So a student can have multiple entries in Student_Enrolment for the same semester if they are enrolled in multiple degree programs. So the subquery groups by student_id and semester_id, counts distinct degree_program_id. So if a student has two entries in Student_Enrolment for the same semester with different degree_program_ids, the count would be 2. So that's correct.\n\nSo the current SQL is correct. But maybe the user's current SQL has a mistake. Wait, the current SQL uses DISTINCT in the SELECT. But the subquery already groups by student_id and semester_id, so each row in the subquery is a unique student-semester. Then the outer query joins with Students, which would result in multiple rows for the same student if they have multiple semesters. The DISTINCT in the SELECT would collapse those into one row per student. So the final result is each student once, which is correct.\n\nSo the current SQL is correct. But the user is asking if it's correct. If not, fix it. But according to this, it is correct. But maybe there's a mistake in the schema or the query.\n\nWait, looking at the schema, the Student_Enrolment table has student_id, semester_id, degree_program_id. So each enrollment is a student in a degree program in a semester. So if a student is enrolled in two degree programs in the same semester, there would be two rows in Student_Enrolment for that student and semester, with different degree_program_ids. So the subquery groups by student_id and semester_id, counts distinct degree_program_id. So if the count is 2, that's correct.\n\nSo the current SQL is correct. But maybe the user's current SQL is correct, but perhaps there's a mistake in the query. Wait, the current SQL uses DISTINCT in the SELECT. But the subquery's student_id is from Student_Enrolment, which is joined with Students. So the DISTINCT is necessary to avoid duplicates if a student has multiple semesters where they meet the criteria. So the query is correct.\n\nWait, but the question is \"Who are enrolled in 2 degree programs in one semester?\" So the answer should list each student once, even if they have multiple semesters where this is true. The current query does that with DISTINCT. So the SQL is correct.\n\nBut maybe the user's current SQL is correct, but perhaps there's a mistake in the schema. Wait, the schema shows that Student_Enrolment has student_id, semester_id, degree_program_id. So the query is correct.\n\nHmm. So the current SQL is correct. But the user is asking if it's correct. If not, fix it. But according to this analysis, it is correct. So the answer would be that the current SQL is correct, but the user's instruction says \"If not, fix it and return only the corrected SQL\". But if it's correct, then perhaps the answer is to return the same SQL. But the user's instruction says",
       "pred_empty": false,
       "ex_score": 0,
-      "reason": "wrong_result"
+      "reason": "execution_error"
     },
     {
       "index": 96,
@@ -1069,7 +1069,7 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "hard",
       "gold_sql": "SELECT T1.first_name ,  T1.middle_name ,  T1.last_name ,  T1.student_id FROM Students AS T1 JOIN Student_Enrolment AS T2 ON T1.student_id  =  T2.student_id GROUP BY T1.student_id HAVING count(*)  =  2",
-      "pred_sql": "SELECT s.first_name, s.middle_name, s.last_name, s.student_id\nFROM Students s\nJOIN Student_Enrolment se ON s.student_id = se.student_id\nGROUP BY s.student_id, se.semester_id\nHAVING COUNT(DISTINCT se.degree_program_id) = 2;",
+      "pred_sql": "SELECT s.first_name, s.middle_name, s.last_name, s.student_id\nFROM Students s\nJOIN Student_Enrolment se ON s.student_id = se.student_id\nGROUP BY s.student_id, se.semester_id\nHAVING COUNT(se.degree_program_id) = 2",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1113,7 +1113,7 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "hard",
       "gold_sql": "SELECT T1.student_id ,  T1.first_name ,  T1.middle_name ,  T1.last_name ,  count(*) ,  T1.student_id FROM Students AS T1 JOIN Student_Enrolment AS T2 ON T1.student_id  =  T2.student_id GROUP BY T1.student_id ORDER BY count(*) DESC LIMIT 1",
-      "pred_sql": "SELECT \n    s.first_name,\n    s.middle_name,\n    s.last_name,\n    s.student_id,\n    COUNT(se.student_enrolment_id) AS enrollment_count\nFROM Students s\nJOIN Student_Enrolment se ON s.student_id = se.student_id\nGROUP BY s.student_id\nORDER BY enrollment_count DESC\nLIMIT 1;",
+      "pred_sql": "SELECT s.first_name, s.middle_name, s.last_name, s.student_id, total_enrollments\nFROM (\n    SELECT student_id, COUNT(*) AS total_enrollments\n    FROM Student_Enrolment\n    GROUP BY student_id\n) AS student_enrollment_counts\nJOIN Students s ON student_enrollment_counts.student_id = s.student_id\nORDER BY total_enrollments DESC\nLIMIT 1;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1135,7 +1135,7 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "hard",
       "gold_sql": "SELECT semester_name FROM Semesters WHERE semester_id NOT IN( SELECT semester_id FROM Student_Enrolment )",
-      "pred_sql": "SELECT s.semester_name\nFROM Semesters s\nLEFT JOIN Student_Enrolment se ON s.semester_id = se.semester_id\nWHERE se.student_enrolment_id IS NULL;",
+      "pred_sql": "SELECT s.semester_name\nFROM Semesters s\nLEFT JOIN Student_Enrolment se ON s.semester_id = se.semester_id\nWHERE se.semester_id IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1146,7 +1146,7 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "extra",
       "gold_sql": "SELECT T1.last_name FROM Students AS T1 JOIN Addresses AS T2 ON T1.current_address_id  =  T2.address_id WHERE T2.state_province_county  =  'NorthCarolina' EXCEPT SELECT DISTINCT T3.last_name FROM Students AS T3 JOIN Student_Enrolment AS T4 ON T3.student_id  =  T4.student_id",
-      "pred_sql": "SELECT s.last_name\nFROM Students s\nJOIN Addresses a ON s.current_address_id = a.address_id\nWHERE a.state_province_county = 'North Carolina'\nAND NOT EXISTS (\n    SELECT 1 FROM Student_Enrolment se WHERE se.student_id = s.student_id\n);",
+      "pred_sql": "SELECT s.last_name\nFROM Students s\nJOIN Addresses a ON s.current_address_id = a.address_id\nLEFT JOIN Student_Enrolment se ON s.student_id = se.student_id\nWHERE a.state_province_county = 'North Carolina'\nAND se.student_enrolment_id IS NULL;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1157,7 +1157,7 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "extra",
       "gold_sql": "SELECT T1.last_name FROM Students AS T1 JOIN Addresses AS T2 ON T1.current_address_id  =  T2.address_id WHERE T2.state_province_county  =  'NorthCarolina' EXCEPT SELECT DISTINCT T3.last_name FROM Students AS T3 JOIN Student_Enrolment AS T4 ON T3.student_id  =  T4.student_id",
-      "pred_sql": "SELECT DISTINCT s.last_name\nFROM Students s\nJOIN Addresses a ON s.current_address_id = a.address_id\nWHERE a.state_province_county = 'North Carolina'\nAND s.student_id NOT IN (\n    SELECT student_id FROM Student_Enrolment\n)",
+      "pred_sql": "SELECT DISTINCT s.last_name\nFROM Students s\nJOIN Addresses a ON s.current_address_id = a.address_id\nWHERE a.state_province_county = 'North Carolina'\nAND s.student_id NOT IN (SELECT student_id FROM Student_Enrolment);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1179,7 +1179,7 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "hard",
       "gold_sql": "SELECT first_name ,  middle_name ,  last_name FROM Students ORDER BY date_first_registered ASC LIMIT 1",
-      "pred_sql": "SELECT first_name, middle_name, last_name\nFROM Students\nORDER BY date_first_registered ASC\nLIMIT 1;",
+      "pred_sql": "SELECT first_name, middle_name, last_name FROM Students ORDER BY date_first_registered ASC LIMIT 1;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1190,7 +1190,7 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "hard",
       "gold_sql": "SELECT first_name ,  middle_name ,  last_name FROM Students ORDER BY date_left ASC LIMIT 1",
-      "pred_sql": "SELECT first_name, middle_name, last_name FROM Students WHERE date_left IS NOT NULL ORDER BY date_left ASC LIMIT 1;",
+      "pred_sql": "SELECT first_name, middle_name, last_name\nFROM Students\nWHERE date_left IS NOT NULL\nORDER BY date_left ASC\nLIMIT 1;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1223,10 +1223,10 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "hard",
       "gold_sql": "SELECT T1.address_id ,  T1.line_1 ,  T1.line_2 FROM Addresses AS T1 JOIN Students AS T2 ON T1.address_id  =  T2.current_address_id GROUP BY T1.address_id ORDER BY count(*) DESC LIMIT 1",
-      "pred_sql": "SELECT a.address_id, a.line_1, a.line_2\nFROM Addresses a\nWHERE a.address_id IN (\n    SELECT s.current_address_id\n    FROM Students s\n    GROUP BY s.current_address_id\n    HAVING COUNT(*) = (\n        SELECT MAX(cnt)\n        FROM (\n            SELECT COUNT(*) as cnt\n            FROM Students\n            GROUP BY current_address_id\n        )\n    )\n)\nUNION\nSELECT a.address_id, a.line_1, a.line_2\nFROM Addresses a\nWHERE a.address_id IN (\n    SELECT s.permanent_address_id\n    FROM Students s\n    GROUP BY s.permanent_address_id\n    HAVING COUNT(*) = (\n        SELECT MAX(cnt)\n        FROM (\n            SELECT COUNT(*) as cnt\n            FROM Students\n            GROUP BY permanent_address_id\n        )\n    )\n)",
+      "pred_sql": "SELECT a.address_id, a.line_1, a.line_2\nFROM Addresses a\nJOIN Students s ON a.address_id = s.current_address_id\nGROUP BY a.address_id\nORDER BY COUNT(*) DESC\nLIMIT 1;",
       "pred_empty": false,
-      "ex_score": 0,
-      "reason": "wrong_result"
+      "ex_score": 1,
+      "reason": "correct"
     },
     {
       "index": 111,
@@ -1234,7 +1234,7 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "extra",
       "gold_sql": "SELECT DISTINCT T2.semester_id FROM Degree_Programs AS T1 JOIN Student_Enrolment AS T2 ON T1.degree_program_id  =  T2.degree_program_id WHERE degree_summary_name  =  'Master' INTERSECT SELECT DISTINCT T2.semester_id FROM Degree_Programs AS T1 JOIN Student_Enrolment AS T2 ON T1.degree_program_id  =  T2.degree_program_id WHERE degree_summary_name  =  'Bachelor'",
-      "pred_sql": "SELECT se.semester_id\nFROM Student_Enrolment se\nJOIN Degree_Programs dp ON se.degree_program_id = dp.degree_program_id\nWHERE dp.degree_summary_name LIKE '%Master%' OR dp.degree_summary_name LIKE '%Bachelor%'\nGROUP BY se.semester_id\nHAVING SUM(CASE WHEN dp.degree_summary_name LIKE '%Master%' THEN 1 ELSE 0 END) > 0\nAND SUM(CASE WHEN dp.degree_summary_name LIKE '%Bachelor%' THEN 1 ELSE 0 END) > 0;",
+      "pred_sql": "SELECT se.semester_id\nFROM Student_Enrolment se\nJOIN Degree_Programs dp ON se.degree_program_id = dp.degree_program_id\nWHERE dp.degree_summary_name LIKE '%Master%' OR dp.degree_summary_name LIKE '%Bachelor%'\nGROUP BY se.semester_id\nHAVING COUNT(CASE WHEN dp.degree_summary_name LIKE '%Master%' THEN 1 END) > 0\nAND COUNT(CASE WHEN dp.degree_summary_name LIKE '%Bachelor%' THEN 1 END) > 0;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1245,10 +1245,10 @@
       "db_id": "student_transcripts_tracking",
       "hardness": "extra",
       "gold_sql": "SELECT DISTINCT T2.semester_id FROM Degree_Programs AS T1 JOIN Student_Enrolment AS T2 ON T1.degree_program_id  =  T2.degree_program_id WHERE degree_summary_name  =  'Master' INTERSECT SELECT DISTINCT T2.semester_id FROM Degree_Programs AS T1 JOIN Student_Enrolment AS T2 ON T1.degree_program_id  =  T2.degree_program_id WHERE degree_summary_name  =  'Bachelor'",
-      "pred_sql": "SELECT se.semester_id\nFROM Student_Enrolment se\nJOIN Degree_Programs dp ON se.degree_program_id = dp.degree_program_id\nGROUP BY se.semester_id\nHAVING SUM(CASE WHEN dp.degree_summary_name = 'Masters' THEN 1 ELSE 0 END) > 0\nAND SUM(CASE WHEN dp.degree_summary_name = 'Bachelors' THEN 1 ELSE 0 END) > 0;",
+      "pred_sql": "SELECT se.semester_id\nFROM Student_Enrolment se\nJOIN Degree_Programs dp ON se.degree_program_id = dp.degree_program_id\nWHERE dp.degree_summary_name LIKE '%Master%' OR dp.degree_summary_name LIKE '%Bachelor%'\nGROUP BY se.semester_id\nHAVING SUM(CASE WHEN dp.degree_summary_name LIKE '%Master%' THEN 1 ELSE 0 END) > 0\nAND SUM(CASE WHEN dp.degree_summary_name LIKE '%Bachelor%' THEN 1 ELSE 0 END) > 0;",
       "pred_empty": false,
-      "ex_score": 0,
-      "reason": "wrong_result"
+      "ex_score": 1,
+      "reason": "correct"
     },
     {
       "index": 113,
@@ -1256,10 +1256,10 @@
       "db_id": "tvshow",
       "hardness": "extra",
       "gold_sql": "SELECT country FROM TV_Channel EXCEPT SELECT T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.written_by  =  'Todd Casey'",
-      "pred_sql": "SELECT DISTINCT Country\nFROM TV_Channel\nWHERE Country NOT IN (\n    SELECT T.Country\n    FROM TV_Channel T\n    JOIN Cartoon C ON T.id = C.Channel\n    WHERE C.Written_by = 'Todd Casey'\n);",
+      "pred_sql": "SELECT Country\nFROM TV_Channel\nWHERE Country NOT IN (\n    SELECT DISTINCT Country\n    FROM TV_Channel\n    JOIN Cartoon ON TV_Channel.id = Cartoon.Channel\n    WHERE Cartoon.Written_by = 'Todd Casey'\n);\n\nFirst, I need to check if this query is correct based on the schema. Let's look at the tables involved.\n\nThe TV_Channel table has an 'id' which is the primary key. The Cartoon table has a 'Channel' column that references TV_Channel.id. So the join between TV_Channel and Cartoon is on TV_Channel.id = Cartoon.Channel. That part seems okay.\n\nThe question is about countries where TV channels are not playing any cartoon written by Todd Casey. So the approach is to find all countries that have at least one cartoon written by Todd Casey, then exclude those countries from the list of all countries.\n\nThe current query does exactly that. It selects all countries from TV_Channel, then excludes those countries that are in the subquery. The subquery joins TV_Channel and Cartoon, filters for Written_by = 'Todd Casey', and gets the distinct countries. Then the outer query selects countries not in that list.\n\nWait, but there's a possible issue here. The TV_Channel table's 'Country' column is part of the TV_Channel entries. Each TV_Channel entry has a Country. So when we join TV_Channel and Cartoon, the Country comes from TV_Channel. So the subquery is getting the countries of the TV channels that are playing cartoons by Todd Casey. Then the outer query selects all countries from TV_Channel that are not in that list.\n\nBut wait, the problem is that a TV channel (identified by id) is in one country. So each TV_Channel entry has a Country. So if a TV channel is in Country X, and it's playing a cartoon by Todd Casey, then Country X should be excluded. The current query does that.\n\nBut let's check the join condition. The join is on TV_Channel.id = Cartoon.Channel. Since Cartoon.Channel is a foreign key to TV_Channel.id, that's correct. So the join is correct.\n\nAnother thing to check: the subquery uses DISTINCT Country. That's okay because multiple cartoons by Todd Casey might be on the same channel, but we just need to know which countries have at least one such cartoon.\n\nSo the query seems correct. Wait, but let's think again. The question is \"which countries' tv channels are not playing any cartoon written by Todd Casey?\" So the answer should be all countries that have TV channels (from TV_Channel) where none of those channels are playing any cartoon by Todd Casey.\n\nThe current query selects all countries from TV_Channel, then excludes those countries that are in the subquery (which are countries of channels that do play Todd Casey's cartoons). So the result is countries that have TV channels but none of those channels are playing Todd Casey's cartoons. That seems correct.\n\nWait, but what if a country has multiple TV channels, some of which play Todd Casey's cartoons and others don't? The current query would exclude the country entirely if any of its channels play such cartoons. But the question is about countries whose TV channels are not playing any. So if a country has at least one channel that plays a Todd Casey cartoon, then that country should be excluded. The current query does that. Because the subquery collects all countries that have at least one channel playing such cartoons, and the outer query excludes those. So the result is countries where none of their channels are playing those cartoons. That's correct.\n\nWait, but the TV_Channel table's Country is per channel. So each entry in TV_Channel is a channel with a country. So if a country has multiple channels, each channel has its own entry. So the Country in TV_Channel is the country of that specific channel. So when we select Country from TV_Channel, we get all countries that have at least one channel. Then the subquery finds all countries that have at least one channel playing Todd Casey's cartoons. So the outer query selects countries that have channels but none of those channels are playing the cartoons. That's exactly what the question is asking.\n\nSo the current SQL seems correct. But wait, let's check the data types. The TV_Channel.id is TEXT, and Cartoon.Channel is TEXT (since it's a foreign key to TV_Channel.id). So the join is correct.\n\nAnother possible issue: the subquery's WHERE clause is on Cartoon.Written_by = 'Todd Casey'. The schema says Written_by is TEXT, so that's okay.\n\nWait, but in the TV_Channel table, the Country is a TEXT field. So the query is selecting Country from TV_Channel, which is correct.\n\nSo the current SQL should be correct. But let me think again. Suppose there's a country that has a TV channel, but none of its channels are playing any cartoon by Todd Casey. Then that country's Country would be in the outer query's result. The subquery would not include that country, so it's included in the final result. That's correct.\n\nBut wait, the current query's subquery is selecting Country from TV_Channel joined with Cartoon. So the Country in the subquery is the country of the TV channel that is playing the cartoon. So if a TV channel in Country X is playing a Todd Casey cartoon, then Country X is in the subquery's result. Then the outer query excludes Country X. So the final result is countries that have TV channels but none of their channels are playing Todd Casey's cartoons. That's exactly what the question is asking.\n\nSo the current SQL is correct. But wait, the user is asking if the current SQL is correct. If not, fix it. But according to this analysis, it is correct. But maybe there's a mistake I'm missing.\n\nWait, another angle: the TV_Channel table's Country is per channel. So each channel has a country. The question is about countries whose TV channels (plural) are not playing any cartoon. So if a country has multiple channels, and at least one of them is playing a Todd Casey cartoon, then that country should be excluded. The current query does that, because the subquery collects all countries that have at least one channel playing such cartoons, and the outer query excludes those. So the result is countries where none of their channels are playing those cartoons. That's correct.\n\nBut wait, the current query's subquery is selecting Country from TV_Channel joined with Cartoon. So each row in the subquery is a country of a channel that is playing a Todd Casey cartoon. So the DISTINCT Country in the subquery gives all countries that have at least one such channel. Then the outer query selects all countries from TV_Channel that are not in that list. So that's correct.\n\nSo the current SQL is correct. But why is the user asking? Maybe there's a mistake in the join. Let me check the foreign keys again. The schema says TV_series.Channel -> TV_Channel.id, and Cartoon.Channel -> TV_Channel.id. So Cartoon.Channel is a foreign key to TV_Channel.id. So the join between TV_Channel and Cartoon is on TV_Channel.id = Cartoon.Channel. That's correct.\n\nAnother possible issue: the TV_Channel table's id is TEXT, and Cartoon.Channel is TEXT (since it's a foreign key to TV_Channel.id). So the join is correct.\n\nWait, but in the TV_Channel table, the id is TEXT, but in the TV_series table, the id is NUMBER. But that's not relevant here.\n\nSo, the current SQL seems correct. But maybe the user made a mistake in the query. Let me check again.\n\nWait, the current query is:\n\nSELECT Country\nFROM TV_Channel\nWHERE Country NOT IN (\n    SELECT DISTINCT Country\n    FROM TV_Channel\n    JOIN Cartoon ON TV_Channel.id = Cartoon.Channel\n    WHERE Cartoon.Written_by = 'Todd Casey'\n);\n\nYes, that's correct. The outer query selects all countries from TV_Channel, then excludes those countries that are in the subquery (which are countries of channels that have at least one cartoon by Todd Casey). So the result is countries that have TV channels but none of their channels are playing any cartoon by Todd Casey. That's exactly what the question is asking.\n\nSo the current SQL is correct. But the user is asking if it's correct. If not, fix it. But according to this analysis, it is correct. So maybe the answer is that the current SQL is correct, but the user might have a different expectation. Wait, but the user's instruction says: \"Does this SQL correctly answer the question given the schema? If not, fix it and return only the corrected SQL, no explanation.\"\n\nSo if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Let me think again.\n\nWait, the TV_Channel table's Country is per channel. So each channel has a country. The question is about countries whose TV channels (i.e., the channels in that country) are not playing any cartoon by Todd Casey. So if a country has multiple channels, and at least one of them is playing a Todd Casey cartoon, then that country should be excluded. The current query does that. Because the subquery collects all countries that have at least one channel playing such cartoons, and the outer query excludes those. So the result is countries where none of their channels are playing those cartoons. That's correct.\n\nAnother possible issue: the subquery's WHERE clause is on Cartoon.Written_by = 'Todd Casey'. The schema says Written_by is TEXT, so that's okay.\n\nWait, but in the Cartoon table, the Written_by is TEXT. So the condition is correct.\n\nSo the current SQL is correct. Therefore",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "execution_error"
     },
     {
       "index": 114,
@@ -1267,10 +1267,10 @@
       "db_id": "tvshow",
       "hardness": "extra",
       "gold_sql": "SELECT country FROM TV_Channel EXCEPT SELECT T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.written_by  =  'Todd Casey'",
-      "pred_sql": "SELECT Country FROM TV_Channel\nWHERE Country NOT IN (\n    SELECT DISTINCT Country FROM TV_Channel\n    JOIN Cartoon ON TV_Channel.id = Cartoon.Channel\n    WHERE Cartoon.Written_by = 'Todd Casey'\n);",
+      "pred_sql": "SELECT DISTINCT T1.Country\nFROM TV_Channel T1\nWHERE T1.id NOT IN (\n    SELECT DISTINCT C.Channel\n    FROM Cartoon C\n    WHERE C.Written_by = 'Todd Casey'\n);",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "wrong_result"
     },
     {
       "index": 115,
@@ -1278,10 +1278,10 @@
       "db_id": "tvshow",
       "hardness": "extra",
       "gold_sql": "SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Michael Chang' INTERSECT SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Ben Jones'",
-      "pred_sql": "SELECT DISTINCT TV_Channel.series_name, TV_Channel.Country\nFROM TV_Channel\nJOIN Cartoon ON TV_Channel.id = Cartoon.Channel\nWHERE Cartoon.Directed_by IN ('Ben Jones', 'Michael Chang');",
+      "pred_sql": "SELECT DISTINCT TV_Channel.series_name, TV_Channel.Country\nFROM Cartoon\nJOIN TV_Channel ON Cartoon.Channel = TV_Channel.id\nWHERE Cartoon.Directed_by IN ('Ben Jones', 'Michael Chang');\n\nBut wait, the TV_Channel table's id is TEXT, and Cartoon.Channel is TEXT. So the join is correct. The WHERE clause checks the Directed_by field. So this should return the series names and countries of the channels that have at least one cartoon directed by either Ben Jones or Michael Chang.\n\nBut wait, the question says \"some cartoons directed by Ben Jones and Michael Chang\". Does that mean cartoons directed by both, or either? The wording is a bit ambiguous. But in SQL, IN ('Ben Jones', 'Michael Chang') would select cartoons directed by either. If the question requires cartoons directed by both, that would be a different query. But the way the question is phrased: \"directed by Ben Jones and Michael Chang\" could mean that the channel is playing cartoons that are directed by either of them. Because \"some cartoons\" could be a mix. So the IN clause is correct here.\n\nWait, but maybe the user intended that the channel is playing cartoons directed by both directors. But the current query uses IN, which is OR. If the question requires that the channel has cartoons directed by both, then the query would need to use a different approach, like checking that both directors are present. But the original question says \"some cartoons directed by Ben Jones and Michael Chang\". The \"and\" here might be part of the list, meaning cartoons directed by either. For example, \"some cartoons directed by X and Y\" usually means cartoons directed by X or Y. So the IN clause is correct.\n\nSo the current SQL seems correct. But wait, looking at the schema again: the TV_Channel table has id as TEXT PRIMARY KEY, and the Cartoon table's Channel is TEXT. So the join is correct. The fields selected are series_name and Country from TV_Channel. So the query should return the correct data.\n\nWait, but maybe there's a mistake in the join. Let me check the foreign keys. The schema says:\n\n-- Foreign keys:\n--   TV_series.Channel -> TV_Channel.id\n--   Cartoon.Channel -> TV_Channel.id\n\nSo Cartoon.Channel is a foreign key to TV_Channel.id. So the join condition is correct.\n\nTherefore, the current SQL is correct. But wait, the user is asking if the current SQL is correct. If not, fix it. But according to this analysis, the current SQL is correct. But maybe there's a mistake I'm missing.\n\nWait, the TV_Channel table's id is TEXT, and the Cartoon.Channel is TEXT. So the join is correct. The WHERE clause filters the Directed_by field. So the query should work.\n\nWait, but maybe the problem is that the TV_Channel's id is TEXT, but in the TV_series table, the Channel is TEXT as well. But that's okay. The join is between Cartoon.Channel and TV_Channel.id, which are both TEXT. So that's correct.\n\nHmm. So the current SQL is correct. But the user is asking to check if it's correct. If not, fix it. But according to this, it's correct. Wait, but maybe the user made a mistake in the current SQL. Let me check again.\n\nWait, the current SQL uses DISTINCT. That's okay because there might be multiple cartoons on the same channel directed by those directors, so DISTINCT would return each channel once. The question asks for the series name and country of the channel, so each channel should appear once. So DISTINCT is appropriate.\n\nTherefore, the current SQL is correct. But the user is asking to check. Wait, but maybe there's a typo in the column names. Let me check the schema again.\n\nTV_Channel table has series_name and Country. The query selects those. Correct.\n\nCartoon table has Directed_by. The WHERE clause checks that. Correct.\n\nSo the current SQL is correct. But the user is asking to check. Wait, but maybe the problem is that the TV_Channel's id is TEXT, but in the TV_series table, the Channel is TEXT. But that's okay. The join is correct.\n\nWait, but maybe the user intended to use TV_series instead of Cartoon? No, the question is about cartoons directed by those people, so Cartoon table is correct.\n\nHmm. So the current SQL is correct. But the user is asking to check. Wait, but maybe the problem is that the TV_Channel's id is TEXT, but in the Cartoon table, the Channel is TEXT. So the join is correct. So the current SQL is correct. Therefore, the answer is that the current SQL is correct, but the user says \"If not, fix it\". But according to this analysis, it's correct. Wait, but maybe I'm missing something.\n\nWait, looking back at the question: \"Find the series name and country of the tv channel that is playing some cartoons directed by Ben Jones and Michael Chang?\"\n\nThe current query selects from Cartoon joined with TV_Channel, filtering Directed_by in the list. So it's getting all channels that have at least one cartoon directed by either Ben Jones or Michael Chang. Which matches the question's requirement of \"some cartoons directed by Ben Jones and Michael Chang\". So the query is correct.\n\nBut wait, maybe the problem is that the TV_Channel's id is TEXT, but in the Cartoon table, the Channel is TEXT. So the join is correct. So the current SQL is correct. Therefore, the answer is that the current SQL is correct, but the user is asking to check. Wait, but the user's instruction says: \"Does this SQL correctly answer the question given the schema? If not, fix it and return only the corrected SQL, no explanation.\"\n\nSo if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Wait, perhaps the TV_Channel's id is TEXT, but in the Cartoon table, the Channel is TEXT. So the join is correct. So the current SQL is correct. Therefore, the answer is the same as the current SQL. But the user might have made a mistake. Wait, but maybe the problem is that the TV_Channel's id is TEXT, but in the TV_series table, the Channel is TEXT. But that's okay. The join is between Cartoon.Channel and TV_Channel.id, which are both TEXT. So that's correct.\n\nWait, but maybe the problem is that the TV_Channel's id is TEXT, but in the Cartoon table, the Channel is TEXT. So the join is correct. So the current SQL is correct. Therefore, the answer is the same as the current SQL. But the user is asking to check. So perhaps the current SQL is correct, and the answer is to return it as is. But the user's instruction says \"If not, fix it\". So if it's correct, return the same. But the user's example shows that the current SQL is given, and the task is to check if it's correct. So according to this analysis, the current SQL is correct. But maybe I'm missing something.\n\nWait, another angle: the TV_Channel table's id is TEXT, but in the Cartoon table, the Channel is TEXT. So the join is correct. The WHERE clause is correct. The SELECT is correct. So the current SQL is correct. Therefore, the answer is the same as the current SQL. But the user might have a different expectation. Wait, but maybe the problem is that the TV_Channel's id is TEXT, but in the TV_series table, the Channel is TEXT. But that's okay. The join is correct.\n\nAlternatively, maybe the problem is that the TV_Channel's id is TEXT, but in the Cartoon table, the Channel is TEXT. So the join is correct. So the current SQL is correct. Therefore, the answer is the same as the current SQL. But the user's instruction says to return only the corrected SQL if needed. So if it's correct, return the same. But the user's example shows that the current SQL is given, and the task is to check. So according to this, the current SQL is correct. But maybe there's a mistake. Wait, perhaps the TV_Channel's id is TEXT, but in the Cartoon table, the Channel is TEXT. So the join is correct. So the current SQL is correct. Therefore, the answer is the same",
       "pred_empty": false,
       "ex_score": 0,
-      "reason": "wrong_result"
+      "reason": "execution_error"
     },
     {
       "index": 116,
@@ -1289,10 +1289,10 @@
       "db_id": "tvshow",
       "hardness": "extra",
       "gold_sql": "SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Michael Chang' INTERSECT SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Ben Jones'",
-      "pred_sql": "SELECT DISTINCT TV_Channel.series_name, TV_Channel.Country\nFROM Cartoon\nJOIN TV_Channel ON Cartoon.Channel = TV_Channel.id\nWHERE Cartoon.Directed_by IN ('Ben Jones', 'Michael Chang');",
+      "pred_sql": "SELECT TC.series_name, TC.Country\nFROM TV_Channel TC\nJOIN Cartoon C ON TC.id = C.Channel\nWHERE C.Directed_by IN ('Ben Jones', 'Michael Chang')\nGROUP BY TC.id\nHAVING COUNT(DISTINCT C.Directed_by) = 2;",
       "pred_empty": false,
-      "ex_score": 0,
-      "reason": "wrong_result"
+      "ex_score": 1,
+      "reason": "correct"
     },
     {
       "index": 117,
@@ -1300,7 +1300,7 @@
       "db_id": "tvshow",
       "hardness": "extra",
       "gold_sql": "SELECT id FROM TV_Channel EXCEPT SELECT channel FROM cartoon WHERE directed_by  =  'Ben Jones'",
-      "pred_sql": "SELECT id FROM TV_Channel WHERE id NOT IN (SELECT Channel FROM Cartoon WHERE Directed_by = 'Ben Jones');",
+      "pred_sql": "SELECT id FROM TV_Channel WHERE NOT EXISTS (SELECT 1 FROM Cartoon WHERE Cartoon.Channel = TV_Channel.id AND Directed_by = 'Ben Jones');",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1311,7 +1311,7 @@
       "db_id": "tvshow",
       "hardness": "extra",
       "gold_sql": "SELECT id FROM TV_Channel EXCEPT SELECT channel FROM cartoon WHERE directed_by  =  'Ben Jones'",
-      "pred_sql": "SELECT id FROM TV_Channel WHERE id NOT IN (SELECT Channel FROM Cartoon WHERE Directed_by = 'Ben Jones');",
+      "pred_sql": "SELECT tc.id\nFROM TV_Channel tc\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM Cartoon c\n    WHERE c.Channel = tc.id AND c.Directed_by = 'Ben Jones'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1322,10 +1322,10 @@
       "db_id": "tvshow",
       "hardness": "hard",
       "gold_sql": "SELECT package_option FROM TV_Channel WHERE id NOT IN (SELECT channel FROM cartoon WHERE directed_by  =  'Ben Jones')",
-      "pred_sql": "SELECT Package_Option FROM TV_Channel WHERE id NOT IN (SELECT Channel FROM Cartoon WHERE Directed_by = 'Ben Jones');",
+      "pred_sql": "SELECT Package_Option\nFROM TV_Channel\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM Cartoon\n    WHERE Cartoon.Channel = TV_Channel.id\n    AND Directed_by = 'Ben Jones'\n);\n\nThat looks correct. But wait, maybe there's a typo in the schema. Let me check the TV_Channel table's columns. The Package_Option is there. The Cartoon table's Directed_by is TEXT. So the query should be correct. But wait, the user is asking if the current SQL is correct. Wait, maybe the problem is that the TV_Channel's id is TEXT, but in the subquery, the comparison is between Cartoon.Channel (TEXT) and TV_Channel.id (TEXT). So that's okay.\n\nWait, but maybe the issue is that the TV_Channel's id is a primary key, but in the subquery, the condition is on Cartoon.Channel = TV_Channel.id. So for each TV_Channel row, check if there's any Cartoon with that Channel (which is the TV_Channel's id) and Directed_by is Ben Jones. If not, include the Package_Option. That's exactly what the question is asking. So the current SQL should be correct. But why is the user asking? Maybe there's a mistake in the schema. Wait, looking back at the schema:\n\nTV_Channel has id TEXT PRIMARY KEY.\n\nCartoon has Channel TEXT.\n\nTV_series has Channel TEXT, which links to TV_Channel.id.\n\nSo the foreign key is Cartoon.Channel -> TV_Channel.id. So the join is correct.\n\nWait, but in the current SQL, the subquery is selecting from Cartoon where Cartoon.Channel = TV_Channel.id. That's correct. So the query should work. But maybe the problem is that the TV_Channel's id is TEXT, but in the subquery, the comparison is correct. So the current SQL is correct. But the user is asking if it's correct. Wait, maybe the problem is that the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the answer is that the current SQL is correct. But the user says \"If not, fix it\". Wait, but maybe there's a mistake. Let me check again.\n\nWait, the question is to find the package option of the TV channel that do not have any cartoon directed by Ben Jones. So the correct approach is to select all TV_Channel's Package_Option where there is no Cartoon with that Channel (which is the TV_Channel's id) and Directed_by = 'Ben Jones'. The current query does exactly that. So the current SQL is correct. But why is the user asking? Maybe there's a typo in the schema. Wait, looking at the TV_Channel table's columns: Package_Option is there. The Cartoon table's Directed_by is there. So the query should be correct. So the answer is that the current SQL is correct, but the user might have made a mistake. Wait, but the user's current SQL is presented as part of the problem. Wait, the user is asking if the current SQL is correct. If not, fix it. So perhaps the current SQL is correct, but maybe there's a case sensitivity issue. For example, 'Ben Jones' vs 'ben jones'. But the schema's Directed_by is TEXT, so it's case-sensitive. But the question says \"directed by Ben Jones\", so the query uses 'Ben Jones' which is correct. So the current SQL is correct. But maybe the problem is that the TV_Channel's id is TEXT, but in the subquery, the comparison is correct. So the answer is that the current SQL is correct. But the user might have a different issue. Wait, perhaps the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the current SQL is correct. Therefore, the answer is that the current SQL is correct, but the user might have a mistake. Wait, but the user's instruction says \"If not, fix it and return only the corrected SQL\". So if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Let me check again.\n\nWait, the TV_Channel table's id is TEXT. The Cartoon table's Channel is TEXT. So the join is correct. The subquery checks for any Cartoon where Channel equals the TV_Channel's id and Directed_by is 'Ben Jones'. The NOT EXISTS ensures that there are no such cartoons. So the query is correct. Therefore, the current SQL is correct, and the answer is to return the same SQL. But the user might have a different issue. Wait, perhaps the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the answer is that the current SQL is correct. But the user's question is to check if the current SQL is correct. So the answer is yes, but the user might have a different problem. Wait, but the user's current SQL is presented as part of the problem. Wait, the user's current SQL is:\n\nSELECT Package_Option\nFROM TV_Channel\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM Cartoon\n    WHERE Cartoon.Channel = TV_Channel.id\n    AND Directed_by = 'Ben Jones'\n);\n\nBut in SQLite, when you have a subquery in the WHERE clause with a reference to the outer table, you need to make sure that the columns are correctly referenced. In this case, TV_Channel.id is the outer table's column, and Cartoon.Channel is the inner table's column. The condition is correct. So the query should work. Therefore, the current SQL is correct. But maybe the problem is that the TV_Channel's id is TEXT, but in the subquery, the comparison is correct. So the answer is that the current SQL is correct. But the user might have a different issue. Wait, perhaps the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the answer is that the current SQL is correct. Therefore, the correct SQL is the same as the current one. But the user's instruction says \"If not, fix it\". So if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Wait, perhaps the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the answer is that the current SQL is correct. Therefore, the correct SQL is the same as the current one. But the user might have a different problem. Wait, perhaps the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the answer is that the current SQL is correct. Therefore, the correct SQL is the same as the current one. But the user's instruction says to return only the corrected SQL if needed. So if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Wait, perhaps the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the answer is that the current SQL is correct. Therefore, the correct SQL is the same as the current one. But the user's instruction says to return only the corrected SQL. So if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Wait, perhaps the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the answer is that the current SQL is correct. Therefore, the correct SQL is the same as the current one. But the user's instruction says to return only the corrected SQL. So if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Wait, perhaps the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the answer is that the current SQL is correct. Therefore, the correct SQL is the same as the current one. But the user's instruction says to return only the corrected SQL. So if the current SQL is correct, then the answer is to return the same SQL. But maybe there's a mistake. Wait, perhaps the TV_Channel's id is TEXT, but in the subquery, the condition is correct. So the answer is that the current SQL is correct. Therefore, the correct SQL is",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "execution_error"
     },
     {
       "index": 120,
@@ -1344,7 +1344,7 @@
       "db_id": "poker_player",
       "hardness": "hard",
       "gold_sql": "SELECT Name FROM people WHERE People_ID NOT IN (SELECT People_ID FROM poker_player)",
-      "pred_sql": "SELECT Name FROM people WHERE People_ID NOT IN (SELECT People_ID FROM poker_player);",
+      "pred_sql": "SELECT p.Name\nFROM people p\nLEFT JOIN poker_player pp ON p.People_ID = pp.People_ID\nWHERE pp.People_ID IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1399,7 +1399,7 @@
       "db_id": "voter_1",
       "hardness": "extra",
       "gold_sql": "SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Tabatha Gehling' INTERSECT SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Kelly Clauss'",
-      "pred_sql": "SELECT ac.area_code\n    FROM VOTES v\n    JOIN CONTESTANTS c ON v.contestant_number = c.contestant_number\n    JOIN AREA_CODE_STATE ac ON v.state = ac.state\n    WHERE c.contestant_name IN ('Tabatha Gehling', 'Kelly Clauss')\n    GROUP BY ac.area_code\n    HAVING COUNT(DISTINCT c.contestant_name) = 2",
+      "pred_sql": "SELECT ac.area_code\nFROM VOTES v\nJOIN CONTESTANTS c ON v.contestant_number = c.contestant_number\nJOIN AREA_CODE_STATE ac ON v.state = ac.state\nWHERE c.contestant_name IN ('Tabatha Gehling', 'Kelly Clauss')\nGROUP BY ac.area_code\nHAVING COUNT(DISTINCT c.contestant_name) = 2;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1410,7 +1410,7 @@
       "db_id": "world_1",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"English\" INTERSECT SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"French\"",
-      "pred_sql": "SELECT c.Name\nFROM country c\nWHERE EXISTS (\n    SELECT 1 FROM countrylanguage cl1 WHERE cl1.CountryCode = c.Code AND cl1.Language = 'English'\n)\nAND EXISTS (\n    SELECT 1 FROM countrylanguage cl2 WHERE cl2.CountryCode = c.Code AND cl2.Language = 'French'\n);",
+      "pred_sql": "SELECT DISTINCT c.Name\nFROM country c\nJOIN countrylanguage cl1 ON c.Code = cl1.CountryCode\nJOIN countrylanguage cl2 ON c.Code = cl2.CountryCode\nWHERE cl1.Language = 'English' AND cl2.Language = 'French';",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1421,7 +1421,7 @@
       "db_id": "world_1",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"English\" INTERSECT SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"French\"",
-      "pred_sql": "SELECT c.Name\nFROM country c\nWHERE EXISTS (\n    SELECT 1 FROM countrylanguage cl1 WHERE cl1.CountryCode = c.Code AND cl1.Language = 'English'\n)\nAND EXISTS (\n    SELECT 1 FROM countrylanguage cl2 WHERE cl2.CountryCode = c.Code AND cl2.Language = 'French'\n);",
+      "pred_sql": "SELECT c.Name\nFROM country c\nWHERE c.Code IN (\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'English'\n    INTERSECT\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'French'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1432,7 +1432,7 @@
       "db_id": "world_1",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"English\" AND T2.IsOfficial  =  \"T\" INTERSECT SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"French\" AND T2.IsOfficial  =  \"T\"",
-      "pred_sql": "SELECT c.Name\nFROM country c\nWHERE c.Code IN (\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'English' AND IsOfficial = 'T'\n)\nAND c.Code IN (\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'French' AND IsOfficial = 'T'\n);",
+      "pred_sql": "SELECT DISTINCT c.Name\nFROM country c\nJOIN countrylanguage cl1 ON c.Code = cl1.CountryCode\nJOIN countrylanguage cl2 ON c.Code = cl2.CountryCode\nWHERE cl1.Language = 'English' AND cl1.IsOfficial = 'T'\nAND cl2.Language = 'French' AND cl2.IsOfficial = 'T';",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1443,10 +1443,10 @@
       "db_id": "world_1",
       "hardness": "extra",
       "gold_sql": "SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"English\" AND T2.IsOfficial  =  \"T\" INTERSECT SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"French\" AND T2.IsOfficial  =  \"T\"",
-      "pred_sql": "SELECT DISTINCT c.Name\nFROM country c\nJOIN countrylanguage cl1 ON c.Code = cl1.CountryCode\nJOIN country",
+      "pred_sql": "SELECT c.Name\nFROM country c\nWHERE c.Code IN (\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'English' AND IsOfficial = 'T'\n)\nAND c.Code IN (\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'French' AND IsOfficial = 'T'\n);",
       "pred_empty": false,
-      "ex_score": 0,
-      "reason": "wrong_result"
+      "ex_score": 1,
+      "reason": "correct"
     },
     {
       "index": 131,
@@ -1454,7 +1454,7 @@
       "db_id": "world_1",
       "hardness": "extra",
       "gold_sql": "select t1.name from country as t1 join countrylanguage as t2 on t1.code  =  t2.countrycode where t2.language  =  \"english\" and isofficial  =  \"t\" union select t1.name from country as t1 join countrylanguage as t2 on t1.code  =  t2.countrycode where t2.language  =  \"dutch\" and isofficial  =  \"t\"",
-      "pred_sql": "SELECT c.Name\nFROM country c\nJOIN countrylanguage cl ON c.Code = cl.CountryCode\nWHERE cl.Language IN ('English', 'Dutch') AND cl.IsOfficial = 'T';",
+      "pred_sql": "SELECT DISTINCT c.Name\nFROM country c\nJOIN countrylanguage cl ON c.Code = cl.CountryCode\nWHERE cl.Language IN ('English', 'Dutch') AND cl.IsOfficial = 'T';",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1487,7 +1487,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT Name ,  Population ,  LifeExpectancy FROM country WHERE Continent  =  \"Asia\" ORDER BY SurfaceArea DESC LIMIT 1",
-      "pred_sql": "SELECT Name, Population, LifeExpectancy FROM country WHERE Continent = 'Asia' ORDER BY SurfaceArea DESC LIMIT 1;",
+      "pred_sql": "SELECT Name, Population, LifeExpectancy\nFROM country\nWHERE Continent = 'Asia'\nORDER BY SurfaceArea DESC\nLIMIT 1;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1498,7 +1498,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT avg(LifeExpectancy) FROM country WHERE Name NOT IN (SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"English\" AND T2.IsOfficial  =  \"T\")",
-      "pred_sql": "SELECT AVG(c.LifeExpectancy)\nFROM country c\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM countrylanguage cl\n    WHERE cl.CountryCode = c.Code\n    AND cl.Language = 'English'\n    AND cl.IsOfficial = 'T'\n);",
+      "pred_sql": "SELECT AVG(LifeExpectancy)\nFROM country\nWHERE Code NOT IN (\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'English' AND IsOfficial = 'T'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1509,7 +1509,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT avg(LifeExpectancy) FROM country WHERE Name NOT IN (SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"English\" AND T2.IsOfficial  =  \"T\")",
-      "pred_sql": "SELECT AVG(c.LifeExpectancy)\nFROM country c\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM countrylanguage cl\n    WHERE cl.CountryCode = c.Code\n    AND cl.Language = 'English'\n    AND cl.IsOfficial = 'T'\n);",
+      "pred_sql": "SELECT AVG(c.LifeExpectancy)\nFROM country c\nWHERE c.Code NOT IN (\n    SELECT cl.CountryCode\n    FROM countrylanguage cl\n    WHERE cl.Language = 'English'\n    AND cl.IsOfficial = 'T'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1520,7 +1520,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT sum(Population) FROM country WHERE Name NOT IN (SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"English\")",
-      "pred_sql": "SELECT SUM(c.Population)\nFROM country c\nWHERE c.Code NOT IN (\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'English'\n);",
+      "pred_sql": "SELECT SUM(c.Population)\nFROM country c\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM countrylanguage cl\n    WHERE cl.CountryCode = c.Code\n    AND cl.Language = 'English'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1531,7 +1531,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT sum(Population) FROM country WHERE Name NOT IN (SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"English\")",
-      "pred_sql": "SELECT SUM(c.Population)\nFROM country c\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM countrylanguage cl\n    WHERE cl.CountryCode = c.Code\n    AND cl.Language = 'English'\n);",
+      "pred_sql": "SELECT SUM(c.Population)\nFROM country c\nWHERE c.Code NOT IN (\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'English'\n);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1553,7 +1553,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT Name FROM country WHERE SurfaceArea  >  (SELECT min(SurfaceArea) FROM country WHERE Continent  =  \"Europe\")",
-      "pred_sql": "SELECT Name FROM country WHERE SurfaceArea > (SELECT MAX(SurfaceArea) FROM country WHERE Continent = 'Europe');",
+      "pred_sql": "SELECT DISTINCT Name\nFROM country\nWHERE SurfaceArea > (\n    SELECT MAX(SurfaceArea)\n    FROM country\n    WHERE Continent = 'Europe'\n);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1564,7 +1564,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT Name FROM country WHERE Continent  =  \"Africa\"  AND population  <  (SELECT max(population) FROM country WHERE Continent  =  \"Asia\")",
-      "pred_sql": "SELECT Name FROM country WHERE Continent = 'Africa' AND Population < (SELECT MIN(Population) FROM country WHERE Continent = 'Asia');",
+      "pred_sql": "SELECT Name\nFROM country\nWHERE Continent = 'Africa'\nAND Population < (SELECT MIN(Population) FROM country WHERE Continent = 'Asia');",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1575,7 +1575,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT Name FROM country WHERE Continent  =  \"Africa\"  AND population  <  (SELECT min(population) FROM country WHERE Continent  =  \"Asia\")",
-      "pred_sql": "SELECT Name FROM country WHERE Continent = 'Africa' AND Population < (SELECT MIN(Population) FROM country WHERE Continent = 'Asia')",
+      "pred_sql": "SELECT Name FROM country WHERE Continent = 'Africa' AND Population < (SELECT MIN(Population) FROM country WHERE Continent = 'Asia');",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1619,7 +1619,7 @@
       "db_id": "world_1",
       "hardness": "extra",
       "gold_sql": "SELECT CountryCode FROM countrylanguage EXCEPT SELECT CountryCode FROM countrylanguage WHERE LANGUAGE  =  \"English\"",
-      "pred_sql": "SELECT CountryCode FROM countrylanguage WHERE Language != 'English';",
+      "pred_sql": "SELECT Code FROM country WHERE Code NOT IN (SELECT CountryCode FROM countrylanguage WHERE Language = 'English');",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1630,7 +1630,7 @@
       "db_id": "world_1",
       "hardness": "extra",
       "gold_sql": "SELECT Code FROM country WHERE GovernmentForm != \"Republic\" EXCEPT SELECT CountryCode FROM countrylanguage WHERE LANGUAGE  =  \"English\"",
-      "pred_sql": "SELECT Code\nFROM country\nWHERE GovernmentForm != 'Republic'\nAND Code NOT IN (\n    SELECT CountryCode\n    FROM countrylanguage\n    WHERE Language = 'English'\n);",
+      "pred_sql": "SELECT c.Code\nFROM country c\nWHERE NOT EXISTS (\n    SELECT 1\n    FROM countrylanguage cl\n    WHERE cl.CountryCode = c.Code AND cl.Language = 'English'\n)\nAND c.GovernmentForm != 'Republic';",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1663,10 +1663,10 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT DISTINCT T2.Name FROM country AS T1 JOIN city AS T2 ON T2.CountryCode  =  T1.Code WHERE T1.Continent  =  'Europe' AND T1.Name NOT IN (SELECT T3.Name FROM country AS T3 JOIN countrylanguage AS T4 ON T3.Code  =  T4.CountryCode WHERE T4.IsOfficial  =  'T' AND T4.Language  =  'English')",
-      "pred_sql": "SELECT DISTINCT c.Name\nFROM city c\nJOIN country co ON c.CountryCode = co.Code\nWHERE co.Continent = 'Europe'\n  AND NOT EXISTS (\n    SELECT 1 \n    FROM countrylanguage cl \n    WHERE cl.CountryCode = c.CountryCode \n    AND cl.Language = 'English' \n    AND cl.IsOfficial = 'T'\n  )",
+      "pred_sql": "SELECT DISTINCT c.Name\nFROM city c\nJOIN country co ON c.CountryCode = co.Code\nJOIN countrylanguage cl ON co.Code = cl.CountryCode\nWHERE co.Continent = 'Europe'\n  AND cl.Language = 'English'\n  AND cl.IsOfficial = 'F'",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "wrong_result"
     },
     {
       "index": 151,
@@ -1674,10 +1674,10 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "select distinct t3.name from country as t1 join countrylanguage as t2 on t1.code  =  t2.countrycode join city as t3 on t1.code  =  t3.countrycode where t2.isofficial  =  't' and t2.language  =  'chinese' and t1.continent  =  \"asia\"",
-      "pred_sql": "SELECT DISTINCT c.Name\nFROM city c\nJOIN country co ON c.CountryCode = co.Code\nJOIN countrylanguage cl ON co.Code = cl.CountryCode\nWHERE co.Region = 'Asia'\nAND cl.Language = 'Chinese'\nAND cl.IsOfficial = 'T';",
+      "pred_sql": "SELECT DISTINCT c.Name\nFROM city c\nJOIN country co ON c.CountryCode = co.Code\nJOIN countrylanguage cl ON co.Code = cl.CountryCode\nWHERE co.Continent = 'Asia'\nAND cl.Language = 'Chinese'\nAND cl.IsOfficial = 'T';",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "wrong_result"
     },
     {
       "index": 152,
@@ -1696,7 +1696,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT Name ,  SurfaceArea ,  IndepYear FROM country ORDER BY Population LIMIT 1",
-      "pred_sql": "SELECT Name, IndepYear, SurfaceArea\nFROM country\nORDER BY Population ASC\nLIMIT 1;",
+      "pred_sql": "SELECT Name, IndepYear, SurfaceArea FROM country ORDER BY Population ASC LIMIT 1;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1707,7 +1707,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT Name ,  SurfaceArea ,  IndepYear FROM country ORDER BY Population LIMIT 1",
-      "pred_sql": "SELECT Name, IndepYear, SurfaceArea FROM country ORDER BY Population ASC LIMIT 1;",
+      "pred_sql": "SELECT Name, IndepYear, SurfaceArea\nFROM country\nORDER BY Population ASC\nLIMIT 1;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1751,7 +1751,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT count(*) ,  District FROM city WHERE Population  >  (SELECT avg(Population) FROM city) GROUP BY District",
-      "pred_sql": "SELECT District, COUNT(*) AS num_cities\nFROM city\nWHERE Population > (SELECT AVG(Population) FROM city)\nGROUP BY District;",
+      "pred_sql": "SELECT District, COUNT(*) \nFROM city \nWHERE Population > (SELECT AVG(Population) FROM city)\nGROUP BY District;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1784,10 +1784,10 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT LANGUAGE ,  CountryCode ,  max(Percentage) FROM countrylanguage GROUP BY CountryCode",
-      "pred_sql": "SELECT CountryCode, Language\nFROM (\n    SELECT CountryCode, Language, Percentage,\n           ROW_NUMBER() OVER (PARTITION BY CountryCode ORDER BY Percentage DESC) as rn\n    FROM countrylanguage\n)\nWHERE rn = 1;",
+      "pred_sql": "SELECT c.Name, cl.Language\nFROM countrylanguage cl\nJOIN country c ON cl.CountryCode = c.Code\nWHERE cl.Percentage = (\n    SELECT MAX(cl2.Percentage)\n    FROM countrylanguage cl2\n    WHERE cl2.CountryCode = cl.CountryCode\n)\nORDER BY c.Name;\n\nThis should work. For each row in countrylanguage, it checks if its percentage is the maximum for that country. So for each country, all languages with the highest percentage are selected. Then it joins with the country table to get the country name. The ORDER BY c.Name is there, which is fine.\n\nBut wait, the problem is that the subquery is a scalar subquery. In SQLite, when you have a subquery in the WHERE clause like that, it's evaluated for each row. So for each row in countrylanguage, the subquery returns the max percentage for that country. So if a country has multiple languages with the same max percentage, all of them will be selected. So the query would return multiple rows for the same country if there's a tie. But the question is asking for \"the language\", which might imply one per country. However, the problem might not specify that there's a unique maximum. So perhaps the current query is correct.\n\nBut wait, another possible issue: the current query uses cl.Percentage = (subquery). The subquery returns a single value (the max percentage for that country). So for each row in countrylanguage, if its percentage equals the max for its country, it's included. So this should correctly get all languages that have the highest percentage in their respective countries.\n\nBut the problem is that the question is asking for \"the language spoken by the largest percentage of people in each country\". So for each country, there's one language (or possibly multiple if there's a tie). The current query would return all such languages. So if the question expects one per country, but there's a tie, the current query would return multiple. However, the problem statement doesn't specify that there's a unique maximum. So perhaps the current query is correct.\n\nBut wait, the current query's subquery is a scalar subquery. In some SQL databases, using a scalar subquery in the WHERE clause can be inefficient, but SQLite should handle it. However, the main issue here is whether the query correctly answers the question.\n\nAnother possible problem: the current query uses cl.Percentage = (subquery). But the subquery is for each country. So for each row in countrylanguage, the subquery returns the max percentage for that country. So if a country has multiple languages with the same max percentage, all of them are selected. So the query would return multiple rows for the same country. But the question is asking for \"the language\" in each country, which might imply one per country. However, the problem might not require uniqueness. So perhaps the current query is correct.\n\nBut wait, the problem says \"the language spoken by the largest percentage of people in each country\". So for each country, there's one language (the one with the highest percentage). If there's a tie, perhaps the question expects all of them. But the way the question is phrased, \"the language\" might imply one. However, in reality, there could be ties. So the current query would return all languages that have the maximum percentage for each country. So if the question allows for multiple languages in case of a tie, then the current query is correct. Otherwise, if it's expecting one per country, the query might need to use a different approach, like using a window function to get the top one.\n\nBut the current SQL uses a subquery to find the max percentage per country, then selects all languages that have that percentage. So if there's a tie, multiple languages are returned. But the question is asking for \"the language\", which might be ambiguous. However, given the schema and the question, perhaps the current query is correct. But let's check if there's any other issue.\n\nWait, the current query joins countrylanguage and country. The countrylanguage table has CountryCode, which links to country.Code. So the join is correct. The subquery is correctly scoped to each country. So the query should work.\n\nBut wait, the problem is that the current query might return multiple rows for the same country if there's a tie. But the question is asking for \"the language\" in each country. So perhaps the correct approach is to ensure that only one language is returned per country. However, the problem statement doesn't specify that there's a unique maximum. So perhaps the current query is correct as it is.\n\nAlternatively, maybe the current query is correct. Let me think again. The question is: \"What is the language spoken by the largest percentage of people in each country?\" So for each country, find the language with the highest percentage. If there are multiple languages with the same highest percentage, then all of them should be listed. The current query does that. So the answer is correct.\n\nBut wait, the current query's subquery is a scalar subquery. In SQLite, when you have a subquery in the WHERE clause like that, it's evaluated for each row. So for each row in countrylanguage, the subquery returns the max percentage for that country. So if a country has multiple languages with the same max percentage, all of them will be selected. So the query would return multiple rows for the same country. But the question is asking for \"the language\" in each country. So if the question expects one per country, but there's a tie, the current query would return multiple. However, the problem statement doesn't specify that there's a unique maximum. So perhaps the current query is correct.\n\nBut wait, the problem might have a different issue. Let me check the current SQL again. The current SQL is:\n\nSELECT c.Name, cl.Language\nFROM countrylanguage cl\nJOIN country c ON cl.CountryCode = c.Code\nWHERE cl.Percentage = (\n    SELECT MAX(cl2.Percentage)\n    FROM countrylanguage cl2\n    WHERE cl2.CountryCode = cl.CountryCode\n)\nORDER BY c.Name;\n\nThis should work. For each country, it finds the maximum percentage, then selects all languages in that country that have that percentage. Then it joins with the country table to get the country name. The ORDER BY c.Name is there. So this should correctly answer the question, assuming that multiple languages can have the same maximum percentage.\n\nBut wait, the problem is that the current query might not handle the case where a country has no languages. But the countrylanguage table has a foreign key to country.Code, so every country should have at least one language. So that's not an issue.\n\nAnother possible issue: the current query uses cl.Percentage = (subquery). The subquery returns a single value (the max percentage for that country). So for each row in countrylanguage, if its percentage equals the max for its country, it's included. So this is correct.\n\nTherefore, the current SQL is correct. But wait, the user is asking if the current SQL correctly answers the question. If not",
       "pred_empty": false,
       "ex_score": 0,
-      "reason": "wrong_result"
+      "reason": "execution_error"
     },
     {
       "index": 162,
@@ -1795,7 +1795,7 @@
       "db_id": "world_1",
       "hardness": "hard",
       "gold_sql": "SELECT LANGUAGE ,  CountryCode ,  max(Percentage) FROM countrylanguage GROUP BY CountryCode",
-      "pred_sql": "SELECT cl.CountryCode, cl.Language\nFROM countrylanguage cl\nWHERE cl.Percentage = (\n    SELECT MAX(cl2.Percentage)\n    FROM countrylanguage cl2\n    WHERE cl2.CountryCode = cl.CountryCode\n)\nORDER BY cl.CountryCode;",
+      "pred_sql": "SELECT CountryCode, Language\nFROM countrylanguage\nWHERE Percentage = (\n    SELECT MAX(Percentage)\n    FROM countrylanguage\n    WHERE CountryCode = countrylanguage.CountryCode\n)\nORDER BY CountryCode;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1817,7 +1817,7 @@
       "db_id": "orchestra",
       "hardness": "hard",
       "gold_sql": "SELECT Orchestra FROM orchestra WHERE Orchestra_ID NOT IN (SELECT Orchestra_ID FROM performance)",
-      "pred_sql": "SELECT Orchestra FROM orchestra WHERE Orchestra_ID NOT IN (SELECT Orchestra_ID FROM performance);",
+      "pred_sql": "SELECT o.Orchestra\nFROM orchestra o\nLEFT JOIN performance p ON o.Orchestra_ID = p.Orchestra_ID\nWHERE p.Orchestra_ID IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1828,7 +1828,7 @@
       "db_id": "orchestra",
       "hardness": "extra",
       "gold_sql": "SELECT Record_Company FROM orchestra WHERE Year_of_Founded  <  2003 INTERSECT SELECT Record_Company FROM orchestra WHERE Year_of_Founded  >  2003",
-      "pred_sql": "SELECT Record_Company FROM orchestra WHERE Year_of_Founded < 2003\nINTERSECT\nSELECT Record_Company FROM orchestra WHERE Year_of_Founded > 2003;",
+      "pred_sql": "SELECT Record_Company\nFROM orchestra\nWHERE Year_of_Founded < 2003\nINTERSECT\nSELECT Record_Company\nFROM orchestra\nWHERE Year_of_Founded > 2003;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1839,7 +1839,7 @@
       "db_id": "orchestra",
       "hardness": "extra",
       "gold_sql": "SELECT Record_Company FROM orchestra WHERE Year_of_Founded  <  2003 INTERSECT SELECT Record_Company FROM orchestra WHERE Year_of_Founded  >  2003",
-      "pred_sql": "SELECT Record_Company FROM orchestra WHERE Year_of_Founded < 2003\nINTERSECT\nSELECT Record_Company FROM orchestra WHERE Year_of_Founded > 2003;",
+      "pred_sql": "SELECT Record_Company FROM orchestra WHERE Year_of_Founded < 2003\n        INTERSECT\n        SELECT Record_Company FROM orchestra WHERE Year_of_Founded > 2003;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1850,10 +1850,10 @@
       "db_id": "network_1",
       "hardness": "extra",
       "gold_sql": "SELECT id FROM Highschooler EXCEPT SELECT student_id FROM Friend",
-      "pred_sql": "SELECT ID FROM Highschooler WHERE ID NOT IN (SELECT student_id FROM Friend);",
+      "pred_sql": "SELECT ID FROM Highschooler WHERE ID NOT IN (SELECT student_id FROM Friend UNION SELECT friend_id FROM Friend);",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "wrong_result"
     },
     {
       "index": 168,
@@ -1861,10 +1861,10 @@
       "db_id": "network_1",
       "hardness": "extra",
       "gold_sql": "SELECT id FROM Highschooler EXCEPT SELECT student_id FROM Friend",
-      "pred_sql": "SELECT ID FROM Highschooler WHERE ID NOT IN (SELECT student_id FROM Friend) AND ID NOT IN (SELECT friend_id FROM Friend);",
+      "pred_sql": "SELECT ID FROM Highschooler WHERE ID NOT IN (SELECT student_id FROM Friend);",
       "pred_empty": false,
-      "ex_score": 0,
-      "reason": "wrong_result"
+      "ex_score": 1,
+      "reason": "correct"
     },
     {
       "index": 169,
@@ -1872,7 +1872,7 @@
       "db_id": "network_1",
       "hardness": "extra",
       "gold_sql": "SELECT name FROM Highschooler EXCEPT SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id",
-      "pred_sql": "SELECT name FROM Highschooler WHERE ID NOT IN (SELECT student_id FROM Friend UNION SELECT friend_id FROM Friend);",
+      "pred_sql": "SELECT name FROM Highschooler WHERE NOT EXISTS (SELECT 1 FROM Friend WHERE student_id = Highschooler.ID OR friend_id = Highschooler.ID);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1894,7 +1894,7 @@
       "db_id": "network_1",
       "hardness": "extra",
       "gold_sql": "SELECT student_id FROM Friend INTERSECT SELECT liked_id FROM Likes",
-      "pred_sql": "SELECT DISTINCT F.student_id\nFROM Friend F\nJOIN Likes L ON F.student_id = L.liked_id;",
+      "pred_sql": "SELECT student_id FROM Friend\n            UNION\n            SELECT friend_id FROM Friend\n            INTERSECT\n            SELECT liked_id FROM Likes",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1905,7 +1905,7 @@
       "db_id": "network_1",
       "hardness": "extra",
       "gold_sql": "SELECT student_id FROM Friend INTERSECT SELECT liked_id FROM Likes",
-      "pred_sql": "SELECT student_id FROM Friend\n        INTERSECT\n        SELECT liked_id FROM Likes",
+      "pred_sql": "SELECT student_id FROM Friend\nINTERSECT\nSELECT liked_id FROM Likes;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1927,7 +1927,7 @@
       "db_id": "network_1",
       "hardness": "extra",
       "gold_sql": "SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id INTERSECT SELECT T2.name FROM Likes AS T1 JOIN Highschooler AS T2 ON T1.liked_id  =  T2.id",
-      "pred_sql": "SELECT DISTINCT h.name\nFROM Highschooler h\nJOIN Friend f ON h.ID = f.student_id\nJOIN Likes l ON h.ID = l.liked_id",
+      "pred_sql": "SELECT name FROM Highschooler WHERE ID IN (SELECT student_id FROM Friend) AND ID IN (SELECT liked_id FROM Likes);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -1938,7 +1938,7 @@
       "db_id": "network_1",
       "hardness": "hard",
       "gold_sql": "SELECT avg(grade) FROM Highschooler WHERE id IN (SELECT T1.student_id FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id)",
-      "pred_sql": "SELECT AVG(h.grade)\nFROM Highschooler h\nJOIN Friend f ON h.ID = f.student_id;",
+      "pred_sql": "SELECT AVG(H.grade) FROM Highschooler H JOIN Friend F ON H.ID = F.student_id;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -1949,10 +1949,10 @@
       "db_id": "network_1",
       "hardness": "hard",
       "gold_sql": "SELECT avg(grade) FROM Highschooler WHERE id IN (SELECT T1.student_id FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id)",
-      "pred_sql": "SELECT AVG(h.grade)\n        FROM Highschooler h\n        JOIN Friend f ON h.ID = f.student_id;",
+      "pred_sql": "SELECT AVG(h.grade)\nFROM Highschooler h\nJOIN (\n    SELECT student_id FROM Friend\n    UNION\n    SELECT friend_id FROM Friend\n) f ON h.ID = f.ID;",
       "pred_empty": false,
       "ex_score": 0,
-      "reason": "wrong_result"
+      "reason": "execution_error"
     },
     {
       "index": 177,
@@ -1960,10 +1960,10 @@
       "db_id": "network_1",
       "hardness": "hard",
       "gold_sql": "SELECT min(grade) FROM Highschooler WHERE id NOT IN (SELECT T1.student_id FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id)",
-      "pred_sql": "SELECT MIN(grade)\n        FROM Highschooler\n        WHERE ID NOT IN (SELECT student_id FROM Friend);",
+      "pred_sql": "SELECT MIN(h.grade)\nFROM Highschooler h\nWHERE h.ID NOT IN (SELECT student_id FROM Friend)\nAND h.ID NOT IN (SELECT friend_id FROM Friend);",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "wrong_result"
     },
     {
       "index": 178,
@@ -1971,10 +1971,10 @@
       "db_id": "network_1",
       "hardness": "hard",
       "gold_sql": "SELECT min(grade) FROM Highschooler WHERE id NOT IN (SELECT T1.student_id FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id)",
-      "pred_sql": "SELECT MIN(grade)\nFROM Highschooler\nWHERE ID NOT IN (SELECT student_id FROM Friend);",
+      "pred_sql": "SELECT MIN(h.grade)\nFROM Highschooler h\nWHERE h.ID NOT IN (SELECT student_id FROM Friend)\n  AND h.ID NOT IN (SELECT friend_id FROM Friend);\n\nHmm, I need to check if this is correct. Let's break it down.\n\nFirst, the question is about students who have no friends. So, a student without any friends would not appear in the Friend table either as a student_id or as a friend_id. Because the Friend table has student_id and friend_id, both pointing to Highschooler.ID. So if a student is in the Friend table as either student_id or friend_id, they have at least one friend. Therefore, to find students with no friends, we need to exclude those who are in either of those columns.\n\nThe current query uses NOT IN for both student_id and friend_id. That seems right. But wait, what if a student is in the Friend table but as a friend_id? For example, if student A is a friend of student B, then A's ID would be in friend_id. So if we exclude both student_id and friend_id, that should capture all students who are not part of any friendship.\n\nBut wait, the Friend table's primary key is student_id. Wait, looking back at the schema:\n\nCREATE TABLE Friend (\n  student_id NUMBER PRIMARY KEY,\n  friend_id NUMBER\n);\n\nWait, the primary key is student_id. So each student can have multiple friends, but each entry in Friend is a unique student_id. Wait, no. Wait, the primary key is student_id, which means that each student can have only one friend? Because if student_id is the primary key, then each student can appear only once in the Friend table. But that doesn't make sense for a friendship relationship. Because typically, a student can have multiple friends, so the Friend table should have a composite primary key or student_id and friend_id as a pair. But according to the schema given, the primary key is student_id. That might be a mistake in the schema, but we have to work with what's given.\n\nWait, but the foreign keys are:\n\nFriend.friend_id -> Highschooler.ID\n\nFriend.student_id -> Highschooler.ID\n\nSo each entry in Friend is a student (student_id) who has a friend (friend_id). But since student_id is the primary key, each student can have only one friend. Because if student_id is the primary key, then each student can appear only once in the Friend table. So that would mean each student has at most one friend. But that's a bit odd, but perhaps that's how the schema is designed.\n\nBut regardless, the question is about students who do not have any friends. So a student has no friends if they are not present in the Friend table as either student_id (they have no friends) or friend_id (they are not friends with anyone). Wait, no. Wait, if a student is in the Friend table as student_id, that means they have at least one friend (the friend_id). If they are in the Friend table as friend_id, that means someone else has them as a friend. So a student who has no friends would not appear in either student_id or friend_id columns of the Friend table.\n\nTherefore, the correct approach is to select students whose ID is not in the student_id column AND not in the friend_id column of the Friend table.\n\nThe current query does exactly that: h.ID NOT IN (SELECT student_id FROM Friend) AND h.ID NOT IN (SELECT friend_id FROM Friend). So that should correctly identify students with no friends.\n\nBut wait, what if a student is in the Friend table as both student_id and friend_id? For example, if student A is friends with student B, then A's ID is in student_id and B's ID is in friend_id. So if a student is in both, they have a friend. But the query excludes both, so that's correct.\n\nBut wait, the problem is that the current query uses NOT IN. However, in SQL, NOT IN can have issues with NULL values. If any of the subqueries return NULL, then the NOT IN condition might not work as expected. For example, if the Friend table has a NULL in student_id or friend_id, then the NOT IN could exclude all rows. But according to the schema, student_id is the primary key, so it can't be NULL. Similarly, friend_id is a foreign key to Highschooler.ID, which is a primary key, so it can't be NULL either. So the subqueries should not return NULLs. Therefore, NOT IN should be safe here.\n\nBut another thing to consider: the Highschooler table's ID is the primary key, so all IDs are unique. So the subqueries will return unique IDs. So the NOT IN should work correctly.\n\nBut wait, the current query is using MIN(h.grade). So it's getting the minimum grade among students with no friends. That's correct.\n\nWait, but what if there are no students without friends? Then the query would return NULL. But the question is asking for the lowest grade, so if there are no such students, the answer would be NULL, which is acceptable.\n\nBut let's check the current SQL again. The WHERE clause is h.ID NOT IN (SELECT student_id FROM Friend) AND h.ID NOT IN (SELECT friend_id FROM Friend). So that's correct.\n\nWait, but in some SQL dialects, using NOT IN with a subquery that can return NULL can cause issues, but as we established, the subqueries here shouldn't return NULLs because of the primary and foreign key constraints.\n\nSo the current SQL seems correct. But wait, let me think again. Suppose a student is in the Friend table as student_id. That means they have at least one friend (the friend_id). So they should be excluded. Similarly, if a student is in the Friend table as friend_id, that means someone else has them as a friend, so they have at least one friend. Therefore, they should also be excluded. So the students with no friends are those not in either of those two columns. So the WHERE clause is correct.\n\nTherefore, the current SQL is correct. But wait, the user is asking if the current SQL is correct, and if not, fix it. But according to this analysis, it is correct. But maybe there's a mistake.\n\nWait, another angle: the Friend table's student_id is the primary key. So each student can have only one friend. Because if student_id is the primary key, then each student can appear only once in the Friend table. So if a student is in the Friend table as student_id, they have exactly one friend (the friend_id in that row). If they are not in the Friend table as student_id, they have no friends. But if they are in the Friend table as friend_id, that means someone else has them as a friend. So even if they are not in the Friend table as student_id, if they are in friend_id, they have at least one friend (the student_id in that row). Therefore, to have no friends, a student must not be in either student_id or friend_id columns.\n\nSo the current query is correct. Therefore, the answer is that the current SQL is correct. But wait, the user is asking to check if the current SQL is correct, and if not, fix it. But according to this, it's correct. But maybe there's a mistake.\n\nWait, but in the current SQL, the WHERE clause is:\n\nh.ID NOT IN (SELECT student_id FROM Friend)\nAND h.ID NOT IN (SELECT friend_id FROM Friend)\n\nBut in SQLite, using NOT IN with a subquery that returns no rows would result in TRUE. But if the subquery returns any rows, then it's checking against those. But in this case, the subqueries are selecting all student_id and friend_id from Friend. So the WHERE clause is correct.\n\nBut wait, another possible issue: the Friend table's student_id is the primary key, so each student can have only one friend. But the question is about students who do not have any friends. So if a student is in the Friend table as student_id, they have one friend. If they are in friend_id, they have at least one friend (the student_id in that row). So the students with no friends are those not in either. So the query is correct.\n\nBut wait, perhaps the problem is that the current query uses NOT IN, but in some cases, using NOT EXISTS is more efficient or safer. But the question is about correctness, not performance. So as long as the logic is correct, it's okay.\n\nAlternatively, maybe the current query is missing something. Let me think again. Suppose a student is in the Friend table as student_id. Then they have a friend. So they should be excluded. If they are in friend_id, they are a friend of someone else, so they have a friend. So they should also be excluded. So the students with no friends are those not in either. So the WHERE clause is correct.\n\nTherefore, the current SQL is correct. But the user is asking to check if it's correct. But according to this analysis, it is. However, maybe there's a mistake in the schema understanding.\n\nWait, looking back at the schema:\n\nCREATE TABLE Friend (\n  student_id NUMBER PRIMARY KEY,\n  friend_id NUMBER\n);\n\nSo each entry in Friend is a student (student_id) who has a friend (friend_id). Since student_id is the primary key, each student can have only one friend. So if a student is in the Friend table as student",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "execution_error"
     },
     {
       "index": 179,
@@ -1982,7 +1982,7 @@
       "db_id": "dog_kennels",
       "hardness": "extra",
       "gold_sql": "SELECT state FROM Owners INTERSECT SELECT state FROM Professionals",
-      "pred_sql": "SELECT state FROM Owners\nINTERSECT\nSELECT state FROM Professionals;",
+      "pred_sql": "SELECT DISTINCT o.state\nFROM Owners o\nINNER JOIN Professionals p ON o.state = p.state;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2004,7 +2004,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT avg(age) FROM Dogs WHERE dog_id IN ( SELECT dog_id FROM Treatments )",
-      "pred_sql": "SELECT AVG(d.age) FROM Dogs d INNER JOIN Treatments t ON d.dog_id = t.dog_id",
+      "pred_sql": "SELECT AVG(D.age)\nFROM Dogs D\nJOIN Treatments T ON D.dog_id = T.dog_id;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -2015,10 +2015,10 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT avg(age) FROM Dogs WHERE dog_id IN ( SELECT dog_id FROM Treatments )",
-      "pred_sql": "SELECT AVG(CAST(D.age AS REAL)) \nFROM Dogs D \nJOIN Treatments T ON D.dog_id = T.dog_id;",
+      "pred_sql": "SELECT AVG(CAST(d.age AS REAL))\nFROM Dogs d\nWHERE d.dog_id IN (SELECT dog_id FROM Treatments);",
       "pred_empty": false,
-      "ex_score": 0,
-      "reason": "wrong_result"
+      "ex_score": 1,
+      "reason": "correct"
     },
     {
       "index": 183,
@@ -2026,7 +2026,7 @@
       "db_id": "dog_kennels",
       "hardness": "extra",
       "gold_sql": "SELECT professional_id ,  last_name ,  cell_number FROM Professionals WHERE state  =  'Indiana' UNION SELECT T1.professional_id ,  T1.last_name ,  T1.cell_number FROM Professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id GROUP BY T1.professional_id HAVING count(*)  >  2",
-      "pred_sql": "SELECT professional_id, last_name, cell_number\nFROM Professionals\nWHERE state = 'Indiana'\n   OR professional_id IN (\n       SELECT professional_id\n       FROM Treatments\n       GROUP BY professional_id\n       HAVING COUNT(treatment_id) > 2\n   );",
+      "pred_sql": "SELECT professional_id, last_name, cell_number\nFROM Professionals\nWHERE state = 'Indiana'\nUNION\nSELECT p.professional_id, p.last_name, p.cell_number\nFROM Professionals p\nINNER JOIN Treatments t ON p.professional_id = t.professional_id\nGROUP BY p.professional_id\nHAVING COUNT(*) > 2",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2037,10 +2037,10 @@
       "db_id": "dog_kennels",
       "hardness": "extra",
       "gold_sql": "SELECT professional_id ,  last_name ,  cell_number FROM Professionals WHERE state  =  'Indiana' UNION SELECT T1.professional_id ,  T1.last_name ,  T1.cell_number FROM Professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id GROUP BY T1.professional_id HAVING count(*)  >  2",
-      "pred_sql": "SELECT professional_id, last_name, cell_number\nFROM Professionals\nWHERE state = 'Indiana'\n   OR professional_id IN (\n       SELECT professional_id\n       FROM Treatments\n       GROUP BY professional_id\n       HAVING COUNT(*) > 2\n   );",
+      "pred_sql": "SELECT p.professional_id, p.last_name, p.cell_number\nFROM Professionals p\nWHERE p.state = 'IN'\nUNION\nSELECT p.professional_id, p.last_name, p.cell_number\nFROM Professionals p\nJOIN Treatments t ON p.professional_id = t.professional_id\nGROUP BY p.professional_id\nHAVING COUNT(t.treatment_id) > 2;",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "wrong_result"
     },
     {
       "index": 185,
@@ -2048,10 +2048,10 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "select name from dogs where dog_id not in ( select dog_id from treatments group by dog_id having sum(cost_of_treatment)  >  1000 )",
-      "pred_sql": "SELECT d.name\nFROM Dogs d\nJOIN Treatments t ON d.dog_id = t.dog_id\nGROUP BY d.dog_id\nHAVING SUM(t.cost_of_treatment) <= 1000",
+      "pred_sql": "SELECT d.name\nFROM Dogs d\nLEFT JOIN Treatments t ON d.dog_id = t.dog_id\nGROUP BY d.dog_id, d.name\nHAVING COALESCE(SUM(t.cost_of_treatment), 0) <= 1000",
       "pred_empty": false,
-      "ex_score": 0,
-      "reason": "wrong_result"
+      "ex_score": 1,
+      "reason": "correct"
     },
     {
       "index": 186,
@@ -2059,7 +2059,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "select name from dogs where dog_id not in ( select dog_id from treatments group by dog_id having sum(cost_of_treatment)  >  1000 )",
-      "pred_sql": "SELECT d.name\nFROM Dogs d\nWHERE d.owner_id IN (\n    SELECT d2.owner_id\n    FROM Dogs d2\n    LEFT JOIN Treatments t ON d2.dog_id = t.dog_id\n    GROUP BY d2.owner_id\n    HAVING COALESCE(SUM(t.cost_of_treatment), 0) <= 1000\n);",
+      "pred_sql": "SELECT d.name\nFROM Dogs d\nWHERE d.owner_id IN (\n    SELECT d2.owner_id\n    FROM Dogs d2\n    LEFT JOIN Treatments t ON d2.dog_id = t.dog_id\n    GROUP BY d2.owner_id\n    HAVING COALESCE(SUM(t.cost_of_treatment), 0) <= 1000\n)",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -2070,7 +2070,7 @@
       "db_id": "dog_kennels",
       "hardness": "extra",
       "gold_sql": "SELECT first_name FROM Professionals UNION SELECT first_name FROM Owners EXCEPT SELECT name FROM Dogs",
-      "pred_sql": "SELECT DISTINCT first_name FROM Owners\nUNION\nSELECT DISTINCT first_name FROM Professionals\nEXCEPT\nSELECT name FROM Dogs;",
+      "pred_sql": "SELECT first_name FROM Owners\nUNION\nSELECT first_name FROM Professionals\nEXCEPT\nSELECT name FROM Dogs;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2081,7 +2081,7 @@
       "db_id": "dog_kennels",
       "hardness": "extra",
       "gold_sql": "SELECT first_name FROM Professionals UNION SELECT first_name FROM Owners EXCEPT SELECT name FROM Dogs",
-      "pred_sql": "SELECT DISTINCT first_name FROM Owners\nUNION\nSELECT DISTINCT first_name FROM Professionals\nEXCEPT\nSELECT name FROM Dogs;",
+      "pred_sql": "SELECT first_name FROM Owners\nUNION\nSELECT first_name FROM Professionals\nEXCEPT\nSELECT name FROM Dogs;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2103,7 +2103,7 @@
       "db_id": "dog_kennels",
       "hardness": "extra",
       "gold_sql": "SELECT professional_id ,  role_code ,  email_address FROM Professionals EXCEPT SELECT T1.professional_id ,  T1.role_code ,  T1.email_address FROM Professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id",
-      "pred_sql": "SELECT p.professional_id, p.role_code, p.email_address\nFROM Professionals p\nLEFT JOIN Treatments t ON p.professional_id = t.professional_id\nWHERE t.professional_id IS NULL",
+      "pred_sql": "SELECT p.professional_id, p.role_code, p.email_address\nFROM Professionals p\nLEFT JOIN Treatments t ON p.professional_id = t.professional_id\nWHERE t.professional_id IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2114,7 +2114,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT T1.owner_id ,  T2.first_name ,  T2.last_name FROM Dogs AS T1 JOIN Owners AS T2 ON T1.owner_id  =  T2.owner_id GROUP BY T1.owner_id ORDER BY count(*) DESC LIMIT 1",
-      "pred_sql": "SELECT o.owner_id, o.first_name, o.last_name\nFROM Owners o\nJOIN Dogs d ON o.owner_id = d.owner_id\nGROUP BY o.owner_id\nORDER BY COUNT(d.dog_id) DESC\nLIMIT 1;",
+      "pred_sql": "SELECT o.owner_id, o.first_name, o.last_name\nFROM Owners o\nJOIN Dogs d ON o.owner_id = d.owner_id\nGROUP BY o.owner_id\nORDER BY COUNT(d.dog_id) DESC\nLIMIT 1",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2125,7 +2125,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT T1.owner_id ,  T2.first_name ,  T2.last_name FROM Dogs AS T1 JOIN Owners AS T2 ON T1.owner_id  =  T2.owner_id GROUP BY T1.owner_id ORDER BY count(*) DESC LIMIT 1",
-      "pred_sql": "SELECT o.owner_id, o.first_name, o.last_name\nFROM Owners o\nJOIN Dogs d ON o.owner_id = d.owner_id\nGROUP BY o.owner_id\nORDER BY COUNT(d.dog_id) DESC\nLIMIT 1",
+      "pred_sql": "SELECT o.owner_id, o.first_name, o.last_name\nFROM Owners o\nJOIN Dogs d ON o.owner_id = d.owner_id\nGROUP BY o.owner_id\nORDER BY COUNT(d.dog_id) DESC\nLIMIT 1;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2136,7 +2136,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT T1.professional_id ,  T1.role_code ,  T1.first_name FROM Professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id GROUP BY T1.professional_id HAVING count(*)  >=  2",
-      "pred_sql": "SELECT p.professional_id, p.role_code, p.first_name\nFROM Professionals p\nJOIN Treatments t ON p.professional_id = t.professional_id\nGROUP BY p.professional_id\nHAVING COUNT(t.treatment_id) >= 2;",
+      "pred_sql": "SELECT p.professional_id, p.role_code, p.first_name\nFROM Professionals p\nJOIN Treatments t ON p.professional_id = t.professional_id\nGROUP BY p.professional_id\nHAVING COUNT(t.treatment_id) >= 2",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2147,7 +2147,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT T1.professional_id ,  T1.role_code ,  T1.first_name FROM Professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id GROUP BY T1.professional_id HAVING count(*)  >=  2",
-      "pred_sql": "SELECT p.professional_id, p.role_code, p.first_name\nFROM Professionals p\nJOIN Treatments t ON p.professional_id = t.professional_id\nGROUP BY p.professional_id\nHAVING COUNT(t.treatment_id) >= 2;",
+      "pred_sql": "SELECT p.professional_id, p.role_code, p.first_name\nFROM Professionals p\nJOIN Treatments t ON p.professional_id = t.professional_id\nGROUP BY p.professional_id\nHAVING COUNT(t.treatment_id) >= 2",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2158,7 +2158,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT DISTINCT T1.first_name ,  T1.last_name FROM Professionals AS T1 JOIN Treatments AS T2 WHERE cost_of_treatment  <  ( SELECT avg(cost_of_treatment) FROM Treatments )",
-      "pred_sql": "SELECT p.first_name, p.last_name\nFROM Professionals p\nJOIN Treatments t ON p.professional_id = t.professional_id\nWHERE t.cost_of_treatment < (SELECT AVG(cost_of_treatment) FROM Treatments)",
+      "pred_sql": "SELECT DISTINCT p.first_name, p.last_name\nFROM Professionals p\nJOIN Treatments t ON p.professional_id = t.professional_id\nWHERE t.cost_of_treatment < (SELECT AVG(cost_of_treatment) FROM Treatments)",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -2169,7 +2169,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT DISTINCT T1.first_name ,  T1.last_name FROM Professionals AS T1 JOIN Treatments AS T2 WHERE cost_of_treatment  <  ( SELECT avg(cost_of_treatment) FROM Treatments )",
-      "pred_sql": "SELECT P.first_name, P.last_name\nFROM Professionals P\nWHERE P.professional_id IN (\n    SELECT T.professional_id\n    FROM Treatments T\n    WHERE T.cost_of_treatment < (\n        SELECT AVG(cost_of_treatment)\n        FROM Treatments\n    )\n);",
+      "pred_sql": "SELECT DISTINCT p.first_name, p.last_name\nFROM Professionals p\nJOIN Treatments t ON p.professional_id = t.professional_id\nWHERE t.cost_of_treatment < (SELECT AVG(cost_of_treatment) FROM Treatments);",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -2180,7 +2180,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT T1.first_name ,  T1.last_name ,  T2.size_code FROM Owners AS T1 JOIN Dogs AS T2 ON T1.owner_id  =  T2.owner_id",
-      "pred_sql": "SELECT O.first_name, O.last_name, S.size_description\nFROM Owners O\nJOIN Dogs D ON O.owner_id = D.owner_id\nJOIN Sizes S ON D.size_code = S.size_code;",
+      "pred_sql": "SELECT O.first_name, O.last_name, S.size_description\n    FROM Owners O\n    JOIN Dogs D ON O.owner_id = D.owner_id\n    JOIN Sizes S ON D.size_code = S.size_code",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -2191,7 +2191,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT T1.first_name ,  T1.last_name ,  T2.size_code FROM Owners AS T1 JOIN Dogs AS T2 ON T1.owner_id  =  T2.owner_id",
-      "pred_sql": "SELECT O.first_name, O.last_name, S.size_description\nFROM Owners O\nJOIN Dogs D ON O.owner_id = D.owner_id\nJOIN Sizes S ON D.size_code = S.size_code",
+      "pred_sql": "SELECT O.first_name, O.last_name, S.size_description\nFROM Owners O\nJOIN Dogs D ON O.owner_id = D.owner_id\nJOIN Sizes S ON D.size_code = S.size_code;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -2213,7 +2213,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT T1.name ,  T2.date_of_treatment FROM Dogs AS T1 JOIN Treatments AS T2 ON T1.dog_id  =  T2.dog_id WHERE T1.breed_code  =  ( SELECT breed_code FROM Dogs GROUP BY breed_code ORDER BY count(*) ASC LIMIT 1 )",
-      "pred_sql": "SELECT d.name, t.date_of_treatment\nFROM Dogs d\nJOIN Treatments t ON d.dog_id = t.dog_id\nJOIN Breeds b ON d.breed_code = b.breed_code\nWHERE d.breed_code = (\n    SELECT breed_code\n    FROM Dogs\n    GROUP BY breed_code\n    ORDER BY COUNT(*) ASC\n    LIMIT 1\n)",
+      "pred_sql": "SELECT d.name, t.date_of_treatment\nFROM Dogs d\nJOIN Treatments t ON d.dog_id = t.dog_id\nWHERE d.breed_code = (\n    SELECT breed_code\n    FROM Dogs\n    GROUP BY breed_code\n    ORDER BY COUNT(*) ASC\n    LIMIT 1\n)",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2224,7 +2224,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT T1.last_name FROM Owners AS T1 JOIN Dogs AS T2 ON T1.owner_id  =  T2.owner_id WHERE T2.age  =  ( SELECT max(age) FROM Dogs )",
-      "pred_sql": "SELECT o.last_name\nFROM Dogs d\nJOIN Owners o ON d.owner_id = o.owner_id\nORDER BY d.date_of_birth DESC\nLIMIT 1;",
+      "pred_sql": "SELECT o.last_name\nFROM Owners o\nJOIN Dogs d ON o.owner_id = d.owner_id\nORDER BY CAST(d.age AS INTEGER) ASC\nLIMIT 1;",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -2235,7 +2235,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT T1.last_name FROM Owners AS T1 JOIN Dogs AS T2 ON T1.owner_id  =  T2.owner_id WHERE T2.age  =  ( SELECT max(age) FROM Dogs )",
-      "pred_sql": "SELECT o.last_name\nFROM Owners o\nJOIN Dogs d ON o.owner_id = d.owner_id\nWHERE CAST(d.age AS INTEGER) = (SELECT MIN(CAST(d2.age AS INTEGER)) FROM Dogs d2);",
+      "pred_sql": "SELECT O.last_name\nFROM Dogs D\nJOIN Owners O ON D.owner_id = O.owner_id\nORDER BY D.age\nLIMIT 1",
       "pred_empty": false,
       "ex_score": 0,
       "reason": "wrong_result"
@@ -2257,7 +2257,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT role_code ,  street ,  city ,  state FROM professionals WHERE city LIKE '%West%'",
-      "pred_sql": "SELECT role_code, street, city, state\nFROM Professionals\nWHERE city LIKE '%West%';",
+      "pred_sql": "SELECT role_code, street, city, state\n    FROM Professionals\n    WHERE city LIKE '%West%';",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2290,7 +2290,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT count(*) FROM Dogs WHERE age  <  ( SELECT avg(age) FROM Dogs )",
-      "pred_sql": "SELECT COUNT(*) FROM Dogs WHERE age < (SELECT AVG(CAST(age AS REAL)) FROM Dogs);",
+      "pred_sql": "SELECT COUNT(*) FROM Dogs WHERE CAST(age AS REAL) < (SELECT AVG(CAST(age AS REAL)) FROM Dogs);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2301,7 +2301,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT count(*) FROM Dogs WHERE age  <  ( SELECT avg(age) FROM Dogs )",
-      "pred_sql": "SELECT COUNT(*) FROM Dogs WHERE age < (SELECT AVG(age) FROM Dogs);",
+      "pred_sql": "SELECT COUNT(*) FROM Dogs WHERE CAST(age AS REAL) < (SELECT AVG(CAST(age AS REAL)) FROM Dogs);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2312,7 +2312,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT count(*) FROM Dogs WHERE dog_id NOT IN ( SELECT dog_id FROM Treatments )",
-      "pred_sql": "SELECT COUNT(*) \nFROM Dogs d\nLEFT JOIN Treatments t ON d.dog_id = t.dog_id\nWHERE t.treatment_id IS NULL;",
+      "pred_sql": "SELECT COUNT(*) FROM Dogs d LEFT JOIN Treatments t ON d.dog_id = t.dog_id WHERE t.treatment_id IS NULL",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2323,7 +2323,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "select count(*) from dogs where dog_id not in ( select dog_id from treatments )",
-      "pred_sql": "SELECT COUNT(*) \nFROM Dogs d\nLEFT JOIN Treatments t ON d.dog_id = t.dog_id\nWHERE t.treatment_id IS NULL;",
+      "pred_sql": "SELECT COUNT(*) \nFROM Dogs \nLEFT JOIN Treatments ON Dogs.dog_id = Treatments.dog_id \nWHERE Treatments.treatment_id IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2345,7 +2345,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT count(*) FROM Owners WHERE owner_id NOT IN ( SELECT owner_id FROM Dogs )",
-      "pred_sql": "SELECT COUNT(*) FROM Owners WHERE owner_id NOT IN (SELECT owner_id FROM Dogs);",
+      "pred_sql": "SELECT COUNT(*) \nFROM Owners \nLEFT JOIN Dogs ON Owners.owner_id = Dogs.owner_id \nWHERE Dogs.dog_id IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2356,7 +2356,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT count(*) FROM Professionals WHERE professional_id NOT IN ( SELECT professional_id FROM Treatments )",
-      "pred_sql": "SELECT COUNT(*) \nFROM Professionals p\nLEFT JOIN Treatments t ON p.professional_id = t.professional_id\nWHERE t.professional_id IS NULL;",
+      "pred_sql": "SELECT COUNT(*) FROM Professionals p LEFT JOIN Treatments t ON p.professional_id = t.professional_id WHERE t.professional_id IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2367,7 +2367,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT count(*) FROM Professionals WHERE professional_id NOT IN ( SELECT professional_id FROM Treatments )",
-      "pred_sql": "SELECT COUNT(*) \nFROM Professionals p\nLEFT JOIN Treatments t ON p.professional_id = t.professional_id\nWHERE t.treatment_id IS NULL;",
+      "pred_sql": "SELECT COUNT(*) FROM Professionals p WHERE NOT EXISTS (SELECT 1 FROM Treatments t WHERE t.professional_id = p.professional_id);",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2378,7 +2378,7 @@
       "db_id": "dog_kennels",
       "hardness": "hard",
       "gold_sql": "SELECT name ,  age ,  weight FROM Dogs WHERE abandoned_yn  =  1",
-      "pred_sql": "SELECT name, age, weight FROM Dogs WHERE abandoned_yn = 1;",
+      "pred_sql": "SELECT name, age, weight FROM Dogs WHERE abandoned_yn = '1';",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2433,7 +2433,7 @@
       "db_id": "singer",
       "hardness": "hard",
       "gold_sql": "SELECT Name FROM singer WHERE Singer_ID NOT IN (SELECT Singer_ID FROM song)",
-      "pred_sql": "SELECT Name\n    FROM singer\n    WHERE Singer_ID NOT IN (SELECT Singer_ID FROM song);",
+      "pred_sql": "SELECT s.Name\n        FROM singer s\n        LEFT JOIN song so ON s.Singer_ID = so.Singer_ID\n        WHERE so.Singer_ID IS NULL;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"
@@ -2444,10 +2444,10 @@
       "db_id": "singer",
       "hardness": "extra",
       "gold_sql": "SELECT Citizenship FROM singer WHERE Birth_Year  <  1945 INTERSECT SELECT Citizenship FROM singer WHERE Birth_Year  >  1955",
-      "pred_sql": "SELECT Citizenship FROM singer WHERE Birth_Year < 1945\n            INTERSECT\n            SELECT Citizenship FROM singer WHERE Birth_Year > 1955",
+      "pred_sql": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input: Database schema (tables `singer` and `song`), and a natural language question.\n    *   Task: Write a single SQLite SQL query to answer the question.\n    *   Constraint: Return ONLY the SQL query \u2014 no explanation, no markdown, no code fences.\n    *   Question: \"Show the citizenship shared by singers with birth year before 1945 and after 1955.\"\n\n2.  **Analyze the Question:**\n    *   Target: \"Show the citizenship\". This implies selecting the `Citizenship` column from the `singer` table.\n    *   Condition 1: \"birth year before 1945\". This translates to `Birth_Year < 1945`.\n    *   Condition 2: \"and after 1955\". This translates to `Birth_Year > 1955`.\n    *   Logic Check: \"before 1945 AND after 1955\".\n        *   If a singer was born before 1945, their birth year is $\\le 1944$.\n        *   If a singer was born after 1955, their birth year is $\\ge 1956$.\n        *   It is impossible for a number to be both less than 1945 and greater than 1955 simultaneously.\n        *   However, usually in these types of generated questions, there might be a misunderstanding of the phrasing or it's a trick question resulting in an empty set. Or, perhaps it means \"between 1945 and 1955\"? No, it explicitly says \"before 1945 and after 1955\".\n        *   Wait, let's re-read carefully: \"birth year before 1945 and after 1955\".\n        *   Mathematically: $Birth\\_Year < 1945 \\land Birth\\_Year > 1955$. This is a contradiction. The result will be empty.\n        *   Is it possible the user meant \"between 1945 and 1955\"? Or \"before 1955 and after 1945\"?\n        *   As an AI, I must follow the prompt exactly as written, even if the logic yields no results. I should not correct the user's logic unless it's obviously a typo that makes the query nonsensical in a way that prevents execution, but here it's just a condition that returns no rows.\n        *   However, sometimes \"before 1945 and after 1955\" might be interpreted as a range if the user made a mistake. But strictly speaking, I must translate the text to SQL.\n        *   Let's consider if \"before 1945\" means $\\le 1945$ and \"after 1955\" means $\\ge 1955$. Still disjoint.\n        *   Let's consider if the user meant \"between 1945 and 1955\".\n        *   Let's consider if the user meant \"before 1955 and after 1945\".\n        *   Given the instruction \"Write a single SQLite SQL query that answers the question\", I should translate the literal meaning.\n        *   Literal meaning: `Birth_Year < 1945 AND Birth_Year > 1955`.\n        *   Wait, is it possible the question implies a range like \"between 1945 and 1955\"? Usually, questions like \"Show the citizenship shared by singers with birth year between 1945 and 1955\" are common.\n        *   If I write `WHERE Birth_Year < 1945 AND Birth_Year > 1955`, it returns nothing.\n        *   If I assume it's a typo for \"between 1945 and 1955\", I might be guessing.\n        *   If I assume it's a typo for \"before 1955 and after 1945\", I might be guessing.\n        *   However, looking at the phrasing \"before 1945 and after 1955\", it is logically impossible.\n        *   Is there any other interpretation? Maybe \"before 1945\" refers to one group and \"after 1955\" refers to another? No, \"shared by singers with [condition]\".\n        *   Okay, I will write the query exactly as the conditions dictate, even if it returns an empty set. It is the most faithful translation.\n        *   Wait, could it be \"before 1955 and after 1945\"? That makes sense (1945-1955).\n        *   Could it be \"before 1945 OR after 1955\"? No, it says \"and\".\n        *   Let's look at the phrasing again. \"birth year before 1945 and after 1955\".\n        *   Actually, in many generated datasets or test cases, this specific phrasing often appears as a trick or a mistake. But as a SQL generator, I should implement the logic provided.\n        *   However, often in these tasks, if the condition is impossible, the user might have meant \"between 1945 and 1955\".\n        *   Let's check if there's a standard interpretation for \"before X and after Y\" where X > Y. It's a contradiction.\n        *   Maybe the user meant \"between 1945 and 1955\".\n        *   Let's try to interpret \"before 1945\" as $\\le 1945$ and \"after 1955\" as $\\ge 1955$.\n        *   Actually, looking at similar tasks, sometimes the prompt is \"between 1945 and 1955\". If I strictly follow the prompt, I get `WHERE Birth_Year < 1945 AND Birth_Year > 1955`.\n        *   But wait, if I look at the schema, `Birth_Year` is a number.\n        *   Let's assume the user made a typo and meant \"between 1945 and 1955\" (i.e., $\\ge 1945$ and $\\le 1955$) OR \"after 1945 and before 1955\".\n        *   However, I cannot assume. I must follow the instruction.\n        *   Wait, is it possible the question implies \"Show the citizenship shared by singers with birth year before 1945 [OR] after 1955\"? No, it says \"and\".\n        *   Okay, I will write the query that reflects the text exactly.\n        *   Query: `SELECT Citizenship FROM singer WHERE Birth_Year < 1945 AND Birth_Year > 1955;`\n        *   Wait, if I do that, it's useless.\n        *   Is it possible the user meant \"between 1945 and 1955\"?\n        *   Let's consider the possibility that the prompt is a trick to see if I catch the logical impossibility. But the instruction is \"Write a single SQLite SQL query that answers the question.\"\n        *   If I change the logic, I am not answering the question asked.\n        *   If I keep the logic, I am answering the question (with an empty result).\n        *   However, there is a chance the user meant \"between 1945 and 1955\".\n        *   Let's look for clues. \"before 1945 and after 1955\".\n        *   Maybe it means \"before 1955 and after 1945\"? (Typo swap).\n        *   Maybe it means \"between 1945 and 1955\"?\n        *   Let's search for common patterns in these types of prompts. Often, \"before X and after Y\" where X < Y is impossible.\n        *   If I assume it's a typo for \"between 1945 and 1955\", the query would be `WHERE Birth_Year >= 1945 AND Birth_Year <= 1955`.\n        *   If I assume it's a typo for \"after 1945 and before 1955\", the query would be `WHERE Birth_Year > 1945 AND Birth_Year < 1955`.\n        *   Given the strict instruction \"Write a single SQLite SQL query that answers the question\", I should translate the text.\n        *   However, if the text is logically flawed, the query is still valid SQL.\n        *   Let's check if there is a nuance. \"before 1945\" -> `< 1945`. \"after 1955\" -> `> 1955`.\n        *   Okay, I will generate the query based on the literal text.\n        *   Wait, I should check if there's any ambiguity in \"shared by\". \"Show the citizenship",
       "pred_empty": false,
-      "ex_score": 1,
-      "reason": "correct"
+      "ex_score": 0,
+      "reason": "execution_error"
     },
     {
       "index": 222,
@@ -2455,7 +2455,7 @@
       "db_id": "singer",
       "hardness": "extra",
       "gold_sql": "SELECT Citizenship FROM singer WHERE Birth_Year  <  1945 INTERSECT SELECT Citizenship FROM singer WHERE Birth_Year  >  1955",
-      "pred_sql": "SELECT Citizenship FROM singer WHERE Birth_Year < 1945\n        INTERSECT\n        SELECT Citizenship FROM singer WHERE Birth_Year > 1955",
+      "pred_sql": "SELECT Citizenship FROM singer WHERE Birth_Year < 1945\nINTERSECT\nSELECT Citizenship FROM singer WHERE Birth_Year > 1955;",
       "pred_empty": false,
       "ex_score": 1,
       "reason": "correct"

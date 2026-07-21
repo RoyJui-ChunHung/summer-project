@@ -29,4 +29,45 @@
 
 ---
 
+## Exp 002 — Three-way comparison: Single-shot vs Feedback Loop vs Blind Correction
+
+**Date:** 2026-07-21  
+**Model:** `qwen/qwen3.5-9b` (via OpenRouter)  
+**Dataset:** Spider 1.0 dev set — Hard + Extra Hard (224 examples)  
+**Commands:**
+```
+python3 src/eval.py --max_retries 1 --output experiments/run_retries1.json
+python3 src/eval.py --max_retries 3 --output experiments/run_retries3.json
+python3 src/eval.py --agent blind --flavor generic --output experiments/run_blind.json
+```
+
+**Note:** All three runs use the updated `_parse_response` (reasoning-preamble extraction) and `_chat` (retry + timeout). Exp 001 numbers are not directly comparable; Exp 002 is the clean baseline.
+
+### Results
+
+| Agent | `max_retries` | Correct | EX | vs single-shot | Output file |
+|---|---|---|---|---|---|
+| Single-shot | 1 | 141/224 | **62.9%** | — | `run_retries1.json` |
+| Blind correction | 3 | 151/224 | **67.4%** | +4.5pp | `run_blind.json` |
+| Feedback loop | 3 | 158/224 | **70.5%** | +7.6pp | `run_retries3.json` |
+
+**Blind vs feedback gap: −3.1pp** (blind trails feedback loop).
+
+### Key Observations
+
+- **Exp 002 supersedes Exp 001.** The `_parse_response` parser was updated between runs (now extracts the first top-level SQL statement from responses that mix reasoning prose before the query). The Exp 001 numbers (61.6% / 68.8%) are not comparable; use Exp 002 (62.9% / 70.5%) as the authoritative baseline.
+- Feedback loop eliminates all 32 execution errors, but wrong_result rises from 51 → 66: those crashes are converted into silent wrong answers. The agent never knows the result is wrong, so extra retries produce the same logical mistake.
+- Blind correction partially reduces execution errors (32 → 14) without any execution signal — the self-review pass catches some syntax mistakes. But it cannot match feedback's complete elimination of runtime failures.
+- INTERSECT shows blind (81.6%) beating feedback (76.3%), and GROUP BY shows blind (43.6%) beating feedback (38.5%). Treat these as tentative: both patterns have n ≈ 38, so a handful of examples separates the two agents and random variation could explain the reversal.
+- Feedback loop is the strongest agent overall (+7.6pp vs single-shot). Blind is useful when execution is unavailable but is less efficient (3 calls/example for +4.5pp vs feedback's adaptive 1–3 calls for +7.6pp).
+
+### Engineering Notes
+
+- Added `timeout=60` to all API calls (httpx was hanging indefinitely on stalled connections).
+- Added per-example checkpoint (`.ckpt` JSONL) so crashes are resumable without redoing work.
+- Added `_is_sql()` guard in `BlindCorrectionAgent` to prevent a non-SQL review response from overwriting a good prediction.
+- Added `_parse_response` reasoning-preamble extraction: finds first `^SELECT|^WITH` line when model outputs prose before SQL.
+
+---
+
 *Add new experiments below this line.*
