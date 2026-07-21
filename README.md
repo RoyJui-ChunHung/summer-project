@@ -49,4 +49,4 @@ Traditional text-to-SQL systems generate SQL in a single shot. When the query fa
 - [x] Week 2 — reading notes + agent loop sketch complete → [`notes/week2/`](notes/week2/)
 - [x] Week 3 — reading notes complete → [`notes/week3/`](notes/week3/)
 - [x] Week 5–7 — eval harness + agent implemented → [`src/eval.py`](src/eval.py)
-- [x] A/B experiment (Qwen3.5-9b, Spider Hard/Extra Hard, n=224): single-shot **61.6%** vs feedback loop **68.8%** (+7.2pp) → [`experiments/`](experiments/)
+- [x] Three-way experiment (Qwen3.5-9b, Spider Hard/Extra Hard, n=224): single-shot **62.9%** / blind self-correction **67.4%** / feedback loop **70.5%** → [`experiments/`](experiments/)
