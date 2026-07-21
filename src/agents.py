@@ -1,9 +1,10 @@
 import os
 import re
+import time
 from abc import ABC, abstractmethod
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, OpenAI
 
 from tools import SQLExecutor
 
@@ -57,11 +58,51 @@ def format_schema(db_id: str, schema: dict) -> str:
 
 def _parse_response(resp) -> tuple:
     """Return (raw_text, cleaned_sql) from an OpenAI chat completion."""
+    if resp is None or not resp.choices:
+        return "", ""
     msg = resp.choices[0].message
     # Qwen3 sometimes puts the answer in reasoning when content is truncated
     raw = msg.content or getattr(msg, "reasoning", None) or ""
-    sql = re.sub(r"```(?:sql)?\s*", "", raw, flags=re.IGNORECASE).replace("```", "").strip()
+
+    # Try code-fenced block first (cleanest case)
+    fence = re.search(r"```(?:sql)?\s*([\s\S]*?)```", raw, re.IGNORECASE)
+    if fence:
+        return raw, fence.group(1).strip()
+
+    # Strip any unclosed fence markers
+    text = re.sub(r"```(?:sql)?\s*", "", raw, flags=re.IGNORECASE).replace("```", "").strip()
+
+    # Qwen3 often prepends reasoning prose; find first top-level SQL statement
+    match = re.search(r"^(SELECT|WITH)\b", text, re.IGNORECASE | re.MULTILINE)
+    sql = text[match.start():].strip() if match else text
     return raw, sql
+
+
+def _is_sql(s: str) -> bool:
+    return bool(re.match(r"\s*(SELECT|WITH|INSERT|UPDATE|DELETE)\b", s, re.IGNORECASE))
+
+
+def _chat(client: OpenAI, messages: list, model: str, max_retries: int = 6) -> object:
+    """Call chat.completions.create with exponential backoff on transient errors."""
+    for attempt in range(max_retries):
+        try:
+            resp = client.chat.completions.create(
+                model=model, messages=messages, max_tokens=2048, temperature=0.0,
+                timeout=60,
+            )
+            if resp and resp.choices:
+                return resp
+            # OpenRouter occasionally returns HTTP 200 with null choices; treat as transient
+            err = "empty choices"
+        except (APIConnectionError, APIStatusError) as e:
+            err = f"{type(e).__name__}"
+            resp = None
+        if attempt == max_retries - 1:
+            break
+        wait = 5 * (2 ** attempt)  # 5, 10, 20, 40, 80s
+        print(f"  [retry {attempt+1}/{max_retries-1}] {err} — retrying in {wait}s")
+        time.sleep(wait)
+    return resp  # caller gets None/empty; _parse_response handles it
 
 
 class Agent(ABC):
@@ -88,10 +129,7 @@ class SingleShotAgent(Agent):
             {"role": "system", "content": _SYSTEM_MSG},
             {"role": "user", "content": f"Schema:\n{format_schema(db_id, schema)}\n\nQuestion: {question}\n\nSQL: /no-think"},
         ]
-        resp = self.client.chat.completions.create(
-            model=self.model, messages=messages, max_tokens=2048, temperature=0.0,
-        )
-        _, sql = _parse_response(resp)
+        _, sql = _parse_response(_chat(self.client, messages, self.model))
         return sql
 
 
@@ -112,10 +150,7 @@ class FeedbackLoopAgent(Agent):
 
         last_sql = ""
         for attempt in range(self.max_retries):
-            resp = self.client.chat.completions.create(
-                model=self.model, messages=messages, max_tokens=2048, temperature=0.0,
-            )
-            raw, sql = _parse_response(resp)
+            raw, sql = _parse_response(_chat(self.client, messages, self.model))
             last_sql = sql
 
             result = executor.execute(sql)
@@ -129,3 +164,58 @@ class FeedbackLoopAgent(Agent):
                 })
 
         return last_sql
+
+
+_REVIEW_PROMPTS = {
+    "generic": (
+        "Does this SQL correctly answer the question given the schema? "
+        "If not, fix it and return only the corrected SQL, no explanation. /no-think"
+    ),
+    "gentle": (
+        "Take a careful second look at this SQL. "
+        "Check that JOINs, subqueries, GROUP BY, and filter conditions match the question exactly. "
+        "Return only the corrected SQL, no explanation. /no-think"
+    ),
+}
+
+
+class BlindCorrectionAgent(Agent):
+    def __init__(self, model: str = MODEL, max_retries: int = 3, flavor: str = "generic"):
+        self.model = model
+        self.max_retries = max_retries
+        self.flavor = flavor
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ["OPENROUTER_API_KEY"],
+        )
+
+    def predict(self, question: str, db_id: str, executor: SQLExecutor, schema: dict) -> str:
+        schema_str = format_schema(db_id, schema)
+        messages = [
+            {"role": "system", "content": _SYSTEM_MSG},
+            {"role": "user", "content": f"Schema:\n{schema_str}\n\nQuestion: {question}\n\nSQL: /no-think"},
+        ]
+
+        # Pass 1: generate
+        raw, sql = _parse_response(_chat(self.client, messages, self.model))
+
+        # Passes 2..max_retries: blind review (no execution, fresh call each time)
+        review_prompt = _REVIEW_PROMPTS[self.flavor]
+        for _ in range(self.max_retries - 1):
+            review_messages = [
+                {"role": "system", "content": _SYSTEM_MSG},
+                {"role": "user", "content": (
+                    f"Schema:\n{schema_str}\n\n"
+                    f"Question: {question}\n\n"
+                    f"Current SQL:\n{sql}\n\n"
+                    f"{review_prompt}"
+                )},
+            ]
+            _, revised = _parse_response(_chat(self.client, review_messages, self.model))
+            if not _is_sql(revised):
+                break  # model returned non-SQL; keep current
+            if " ".join(revised.lower().split()) == " ".join(sql.lower().split()):
+                break
+            sql = revised
+
+        return sql

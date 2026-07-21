@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from agents import Agent, FeedbackLoopAgent, SingleShotAgent
+from agents import Agent, BlindCorrectionAgent, FeedbackLoopAgent, SingleShotAgent
 from tools import SQLExecutor
 
 
@@ -112,11 +112,26 @@ def evaluate(
     print(f"Hard + Extra Hard  : {len(hard_examples)}")
     print()
 
-    total, correct = 0, 0
-    failures = []
-    results  = []
+    # Checkpoint: load any already-completed results so a crash is resumable
+    ckpt_file = Path(str(output_file) + ".ckpt") if output_file else None
+    done_indices: set = set()
+    results: list = []
+    if ckpt_file and ckpt_file.exists():
+        with open(ckpt_file) as f:
+            for line in f:
+                r = json.loads(line)
+                results.append(r)
+                done_indices.add(r["index"])
+        print(f"Resuming: {len(done_indices)} examples already done.")
+
+    total  = len(results)
+    correct = sum(r["ex_score"] for r in results)
+    failures = [r for r in results if r["ex_score"] == 0]
 
     for i, ex in enumerate(hard_examples):
+        if i in done_indices:
+            continue
+
         question = ex["question"]
         gold_sql = ex["query"]
         db_id    = ex["db_id"]
@@ -160,6 +175,9 @@ def evaluate(
                           ),
         }
         results.append(record)
+        if ckpt_file:
+            with open(ckpt_file, "a") as f:
+                f.write(json.dumps(record) + "\n")
 
         if ex_score == 0:
             failures.append(record)
@@ -173,6 +191,8 @@ def evaluate(
         mode = "oracle"
     elif isinstance(agent, SingleShotAgent):
         mode = "single-shot (max_retries=1)"
+    elif isinstance(agent, BlindCorrectionAgent):
+        mode = f"blind-correction/{agent.flavor} (max_retries={agent.max_retries})"
     else:
         mode = f"feedback-loop (max_retries={agent.max_retries})"
 
@@ -210,6 +230,8 @@ def evaluate(
         }
         with open(output_file, "w") as f:
             json.dump(summary, f, indent=2)
+        if ckpt_file and ckpt_file.exists():
+            ckpt_file.unlink()
         print(f"\nResults saved to {output_file}")
 
 
@@ -241,6 +263,14 @@ if __name__ == "__main__":
         "--output", type=Path, default=None,
         help="Save per-example results to this JSON file (e.g. experiments/run1.json)",
     )
+    parser.add_argument(
+        "--agent", choices=["single", "feedback", "blind"], default=None,
+        help="Agent type: single, feedback (default), or blind",
+    )
+    parser.add_argument(
+        "--flavor", choices=["generic", "gentle"], default="generic",
+        help="Review prompt flavor for --agent blind (default: generic)",
+    )
     args = parser.parse_args()
 
     if not (args.spider_dir / "dev.json").exists():
@@ -251,7 +281,9 @@ if __name__ == "__main__":
 
     if args.oracle:
         agent = None
-    elif args.max_retries == 1:
+    elif args.agent == "blind":
+        agent = BlindCorrectionAgent(max_retries=args.max_retries, flavor=args.flavor)
+    elif args.agent == "single" or args.max_retries == 1:
         agent = SingleShotAgent()
     else:
         agent = FeedbackLoopAgent(max_retries=args.max_retries)
