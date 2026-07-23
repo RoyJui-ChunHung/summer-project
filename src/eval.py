@@ -222,6 +222,7 @@ def evaluate(
             "model":       agent.model if agent else "oracle",
             "split":       split,
             "max_retries": agent.max_retries if agent else None,
+            "flavor":      getattr(agent, "flavor", None),
             "oracle":      oracle,
             "total":       total,
             "correct":     correct,
