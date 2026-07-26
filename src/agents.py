@@ -94,7 +94,8 @@ def _chat(client: OpenAI, messages: list, model: str, max_retries: int = 6) -> o
                 return resp
             # OpenRouter occasionally returns HTTP 200 with null choices; treat as transient
             err = "empty choices"
-        except (APIConnectionError, APIStatusError) as e:
+        except (APIConnectionError, APIStatusError, ValueError) as e:
+            # ValueError covers json.JSONDecodeError (malformed response body from OpenRouter)
             err = f"{type(e).__name__}"
             resp = None
         if attempt == max_retries - 1:
@@ -166,6 +167,30 @@ class FeedbackLoopAgent(Agent):
         return last_sql
 
 
+_VERIFY_SYSTEM = (
+    "You are a SQL result auditor. "
+    "Your job is not to write SQL — only to judge whether a result correctly answers a question."
+)
+
+_VERIFY_PROMPT = """\
+Question: {question}
+
+Database schema:
+{schema_str}
+
+SQL that was executed:
+{sql}
+
+Rows returned:
+{rows_str}
+
+Does this result correctly and completely answer the question?
+Reply with exactly one of:
+  YES
+  NO: <one sentence explaining what is wrong or missing>
+
+/no-think"""
+
 _REVIEW_PROMPTS = {
     "generic": (
         "Does this SQL correctly answer the question given the schema? "
@@ -219,3 +244,111 @@ class BlindCorrectionAgent(Agent):
             sql = revised
 
         return sql
+
+
+class VerifyAndReviseAgent(Agent):
+    def __init__(self, model: str = MODEL, max_retries: int = 3):
+        self.model = model
+        self.max_retries = max_retries
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ["OPENROUTER_API_KEY"],
+        )
+        self._last_calls = 0
+        self._last_verify_called = False
+        self._last_verify_flagged = False
+
+    def predict(self, question: str, db_id: str, executor: SQLExecutor, schema: dict) -> str:
+        self._last_calls = 0
+        self._last_verify_called = False
+        self._last_verify_flagged = False
+
+        schema_str = format_schema(db_id, schema)
+        messages = [
+            {"role": "system", "content": _SYSTEM_MSG},
+            {"role": "user", "content": f"Schema:\n{schema_str}\n\nQuestion: {question}\n\nSQL: /no-think"},
+        ]
+
+        last_sql = ""
+        last_clean_sql = ""  # fallback: if a verify-triggered revision errors, return the last clean result
+
+        for attempt in range(self.max_retries):
+            raw, sql = _parse_response(_chat(self.client, messages, self.model))
+            self._last_calls += 1
+            last_sql = sql
+
+            result = executor.execute(last_sql)
+
+            if not result.ok:
+                if attempt < self.max_retries - 1:
+                    messages.append({"role": "assistant", "content": last_sql})
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"That SQL raised an error: {result.error}\n"
+                            "Please fix it and return only the corrected SQL. /no-think"
+                        ),
+                    })
+                continue
+
+            # SQL ran clean — save as fallback, then verify
+            last_clean_sql = last_sql
+            self._last_verify_called = True
+            verdict = self._verify(question, schema_str, last_sql, result.rows)
+            self._last_calls += 1
+
+            if verdict["correct"]:
+                print(f"  [verify] YES")
+                break
+
+            print(f"  [verify] NO: {verdict['reason']}")
+            self._last_verify_flagged = True
+            if attempt < self.max_retries - 1:
+                messages.append({"role": "assistant", "content": last_sql})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "The query ran without errors but the result appears incorrect.\n"
+                        f"Verifier feedback: {verdict['reason']}\n"
+                        "Revise the SQL to fix this and return only the corrected SQL. /no-think"
+                    ),
+                })
+
+        # If all verify-triggered revisions errored, return the last clean execution rather
+        # than an errored SQL — execution errors should only occur when every attempt failed.
+        return last_clean_sql if last_clean_sql else last_sql
+
+    def _verify(self, question: str, schema_str: str, sql: str, rows) -> dict:
+        rows_list = list(rows)
+        total = len(rows_list)
+        if total == 0:
+            rows_str = "(empty result set)"
+        else:
+            sample = rows_list[:10]
+            rows_str = "\n".join(str(r) for r in sample)
+            if total > 10:
+                rows_str += f"\n({total} rows total, showing first 10)"
+
+        prompt = _VERIFY_PROMPT.format(
+            question=question,
+            schema_str=schema_str,
+            sql=sql,
+            rows_str=rows_str,
+        )
+        resp = _chat(self.client, [
+            {"role": "system", "content": _VERIFY_SYSTEM},
+            {"role": "user", "content": prompt},
+        ], self.model)
+        raw, _ = _parse_response(resp)
+
+        m = re.search(r'\b(YES|NO)\b', raw, re.IGNORECASE)
+        if m is None:
+            return {"correct": True, "reason": ""}  # can't parse; accept conservatively
+
+        if m.group(1).upper() == "YES":
+            return {"correct": True, "reason": ""}
+
+        rest = raw[m.end():].strip()
+        reason = re.sub(r'^[:\s]+', '', rest).strip()
+        first_sentence = re.split(r'[.\n]', reason)[0].strip() if reason else ""
+        return {"correct": False, "reason": first_sentence or "result does not match the question"}

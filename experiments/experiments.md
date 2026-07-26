@@ -70,4 +70,55 @@ python3 src/eval.py --agent blind --flavor generic --output experiments/run_blin
 
 ---
 
+## Exp 003 — Verify-and-Revise Agent
+
+**Date:** 2026-07-24
+**Model:** `qwen/qwen3.5-9b` (via OpenRouter)
+**Dataset:** Spider 1.0 dev set — Hard + Extra Hard (224 examples)
+**Command:**
+```
+python3 src/eval.py --agent verify --max_retries 3 --output experiments/run_verify.json
+```
+
+**Note:** An earlier buggy run (2026-07-23, 67.4% EX) had 8 execution errors because verify-triggered revisions consumed the error-fixing budget. Fixed by saving the last clean SQL and falling back to it if a revision errors — execution errors can now only occur if every generation attempt failed. This run uses the corrected agent.
+
+### Results
+
+| Agent | max_retries | Correct | EX | vs single-shot | vs feedback | Output file |
+|---|---|---|---|---|---|---|
+| Single-shot | 1 | 141/224 | **62.9%** | — | −7.6pp | `run_retries1.json` |
+| Blind correction | 3 | 151/224 | **67.4%** | +4.5pp | −3.1pp | `run_blind.json` |
+| Feedback loop | 3 | 158/224 | **70.5%** | +7.6pp | — | `run_retries3.json` |
+| Verify-and-revise | 3 | 157/224 | **70.1%** | +7.1pp | −0.4pp | `run_verify.json` |
+
+### Verify Call Statistics
+
+| Metric | Value |
+|---|---|
+| Verify called (SQL ran clean at least once) | 223 / 224 |
+| Verifier flagged (said NO) | 43 / 223 (19.3%) |
+| Fixed after NO | 27 / 43 (63%) |
+| Avg calls per example | 2.71 |
+| Call distribution | 2: 151, 3: 30, 4: 15, 5: 14, 6: 14 |
+
+### Failure Breakdown
+
+| Reason | Single-shot | Blind | Feedback | Verify-and-revise |
+|---|---|---|---|---|
+| execution_error | 32 | 14 | 0 | 1 |
+| wrong_result | 51 | 59 | 66 | 66 |
+| Total failures | 83 | 73 | 66 | 67 |
+
+### Key Observations
+
+- **Verify-and-revise nearly matches the feedback loop (70.1% vs 70.5%, −0.4pp)** at the cost of 2.71 calls/example vs feedback's ~1.2. The gap is within noise for n=224.
+- **Verifier precision is weaker than the surface stat suggests.** 27/43 flagged cases ended correct, but 24 of those 27 were already correct under the feedback loop — the verifier fired NO on a result that was fine. Only 3 are genuine new correct answers. Low recall compounds this: the verifier passed 66 wrong-result queries it should have caught.
+- **Wrong-result count (66) is identical to feedback, but not because fixes offset regressions.** Per-example comparison shows the two runs differ by at most a handful of examples attributable to API non-determinism; the verifier's net contribution is ≈ 0 correct answers over the feedback loop.
+- **Execution errors reduced to 1** (from 8 in the buggy run). The one remaining case is an example where all three generation attempts errored with no clean fallback available — same guarantee as the feedback loop.
+- **The fallback fixes the confounder:** with `last_clean_sql` tracking, verify-and-revise now makes the same error-fixing guarantee as feedback. The only structural difference is the verify calls (extra cost, 2.71 calls/ex avg).
+- **A verification layer on top of execution feedback does not break the wrong-result ceiling.** 70.1% vs 70.5%, wrong_result count identical (66), at ~2.25× the API cost. The ceiling is the model's ability to judge its own results from a row sample, not the architecture.
+- **The "27 fixed after NO" count is misleading.** Per-example comparison against `run_retries3.json` shows that 24 of those 27 were already correct under the feedback loop — the verifier fired NO on a correct result, the revision ran, and it happened to stay correct. Only **3 of the 27 are genuine new correct answers** that the feedback loop missed. The 16 flagged-but-still-wrong cases are examples where the verifier correctly flagged a wrong result but the revision also failed. The broader 9-fix / 10-regression difference between the two runs is partly API non-determinism (temperature=0 is not exactly reproducible across separate calls), not a verifier effect.
+
+---
+
 *Add new experiments below this line.*

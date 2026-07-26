@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from agents import Agent, BlindCorrectionAgent, FeedbackLoopAgent, SingleShotAgent
+from agents import Agent, BlindCorrectionAgent, FeedbackLoopAgent, SingleShotAgent, VerifyAndReviseAgent
 from tools import SQLExecutor
 
 
@@ -174,6 +174,10 @@ def evaluate(
                               "execution_error" if not pred_result.ok else "wrong_result"
                           ),
         }
+        if isinstance(agent, VerifyAndReviseAgent):
+            record["calls"]          = agent._last_calls
+            record["verify_called"]  = agent._last_verify_called
+            record["verify_flagged"] = agent._last_verify_flagged
         results.append(record)
         if ckpt_file:
             with open(ckpt_file, "a") as f:
@@ -193,6 +197,8 @@ def evaluate(
         mode = "single-shot (max_retries=1)"
     elif isinstance(agent, BlindCorrectionAgent):
         mode = f"blind-correction/{agent.flavor} (max_retries={agent.max_retries})"
+    elif isinstance(agent, VerifyAndReviseAgent):
+        mode = f"verify-and-revise (max_retries={agent.max_retries})"
     else:
         mode = f"feedback-loop (max_retries={agent.max_retries})"
 
@@ -203,6 +209,14 @@ def evaluate(
     if total > 0:
         print(f"  EX      : {correct / total:.1%}")
     print("=" * 55)
+
+    if isinstance(agent, VerifyAndReviseAgent) and results:
+        vc  = sum(1 for r in results if r.get("verify_called"))
+        vf  = sum(1 for r in results if r.get("verify_flagged"))
+        avg = sum(r.get("calls", 1) for r in results) / len(results)
+        print(f"  Verify called  : {vc}/{total} (SQL ran clean at least once)")
+        print(f"  Verify flagged : {vf}/{vc if vc else 1} (verifier said NO)")
+        print(f"  Avg calls/ex   : {avg:.2f}")
 
     if failures:
         empty_count = sum(1 for r in results if r["pred_empty"])
@@ -229,6 +243,10 @@ def evaluate(
             "ex":          correct / total if total else 0,
             "results":     results,
         }
+        if isinstance(agent, VerifyAndReviseAgent) and results:
+            summary["verify_called_count"]  = sum(1 for r in results if r.get("verify_called"))
+            summary["verify_flagged_count"] = sum(1 for r in results if r.get("verify_flagged"))
+            summary["avg_calls_per_ex"]     = sum(r.get("calls", 1) for r in results) / len(results)
         with open(output_file, "w") as f:
             json.dump(summary, f, indent=2)
         if ckpt_file and ckpt_file.exists():
@@ -265,8 +283,8 @@ if __name__ == "__main__":
         help="Save per-example results to this JSON file (e.g. experiments/run1.json)",
     )
     parser.add_argument(
-        "--agent", choices=["single", "feedback", "blind"], default=None,
-        help="Agent type: single, feedback (default), or blind",
+        "--agent", choices=["single", "feedback", "blind", "verify"], default=None,
+        help="Agent type: single, feedback (default), blind, or verify",
     )
     parser.add_argument(
         "--flavor", choices=["generic", "gentle"], default="generic",
@@ -284,6 +302,8 @@ if __name__ == "__main__":
         agent = None
     elif args.agent == "blind":
         agent = BlindCorrectionAgent(max_retries=args.max_retries, flavor=args.flavor)
+    elif args.agent == "verify":
+        agent = VerifyAndReviseAgent(max_retries=args.max_retries)
     elif args.agent == "single" or args.max_retries == 1:
         agent = SingleShotAgent()
     else:
