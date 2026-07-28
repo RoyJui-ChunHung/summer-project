@@ -1,4 +1,5 @@
 import sqlite3
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -14,12 +15,23 @@ class ExecutionResult:
         return self.error is None
 
 
-class SQLExecutor:
+class Tool(ABC):
+    name: str
+    description: str
+
+    @abstractmethod
+    def __call__(self, arg):
+        ...
+
+
+class SQLExecutor(Tool):
+    name = "sql_executor"
+    description = "Execute a SQLite SQL query and return the result rows or an error message."
+
     def __init__(self, db_path: Path):
         self.db_path = db_path
 
     def execute(self, sql: str) -> ExecutionResult:
-        """Run SQL and return an ExecutionResult with rows or error message."""
         try:
             conn   = sqlite3.connect(str(self.db_path))
             cursor = conn.execute(sql)
@@ -28,3 +40,6 @@ class SQLExecutor:
             return ExecutionResult(rows=frozenset(rows), error=None)
         except Exception as e:
             return ExecutionResult(rows=None, error=str(e))
+
+    def __call__(self, arg: str) -> ExecutionResult:
+        return self.execute(arg)
