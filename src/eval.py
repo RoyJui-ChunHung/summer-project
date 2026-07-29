@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from agents import Agent, BlindCorrectionAgent, FeedbackLoopAgent, SingleShotAgent, VerifyAndReviseAgent
+from agents import Agent, BlindCorrectionAgent, FeedbackLoopAgent, ReActAgent, SingleShotAgent, VerifyAndReviseAgent
 from tools import SQLExecutor
 
 
@@ -199,6 +199,8 @@ def evaluate(
         mode = f"blind-correction/{agent.flavor} (max_retries={agent.max_retries})"
     elif isinstance(agent, VerifyAndReviseAgent):
         mode = f"verify-and-revise (max_retries={agent.max_retries})"
+    elif isinstance(agent, ReActAgent):
+        mode = f"react (max_retries={agent.max_retries})"
     else:
         mode = f"feedback-loop (max_retries={agent.max_retries})"
 
@@ -283,8 +285,8 @@ if __name__ == "__main__":
         help="Save per-example results to this JSON file (e.g. experiments/run1.json)",
     )
     parser.add_argument(
-        "--agent", choices=["single", "feedback", "blind", "verify"], default=None,
-        help="Agent type: single, feedback (default), blind, or verify",
+        "--agent", choices=["single", "feedback", "blind", "verify", "react"], default=None,
+        help="Agent type: single, feedback (default), blind, verify, or react",
     )
     parser.add_argument(
         "--flavor", choices=["generic", "gentle"], default="generic",
@@ -304,6 +306,8 @@ if __name__ == "__main__":
         agent = BlindCorrectionAgent(max_retries=args.max_retries, flavor=args.flavor)
     elif args.agent == "verify":
         agent = VerifyAndReviseAgent(max_retries=args.max_retries)
+    elif args.agent == "react":
+        agent = ReActAgent(max_retries=args.max_retries)
     elif args.agent == "single" or args.max_retries == 1:
         agent = SingleShotAgent()
     else:

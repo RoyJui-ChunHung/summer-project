@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import time
@@ -82,14 +83,14 @@ def _is_sql(s: str) -> bool:
     return bool(re.match(r"\s*(SELECT|WITH|INSERT|UPDATE|DELETE)\b", s, re.IGNORECASE))
 
 
-def _chat(client: OpenAI, messages: list, model: str, max_retries: int = 6) -> object:
+def _chat(client: OpenAI, messages: list, model: str, max_retries: int = 6, tools=None) -> object:
     """Call chat.completions.create with exponential backoff on transient errors."""
     for attempt in range(max_retries):
         try:
-            resp = client.chat.completions.create(
-                model=model, messages=messages, max_tokens=2048, temperature=0.0,
-                timeout=60,
-            )
+            kwargs = dict(model=model, messages=messages, max_tokens=2048, temperature=0.0, timeout=60)
+            if tools:
+                kwargs["tools"] = tools
+            resp = client.chat.completions.create(**kwargs)
             if resp and resp.choices:
                 return resp
             # OpenRouter occasionally returns HTTP 200 with null choices; treat as transient
@@ -352,3 +353,127 @@ class VerifyAndReviseAgent(Agent):
         reason = re.sub(r'^[:\s]+', '', rest).strip()
         first_sentence = re.split(r'[.\n]', reason)[0].strip() if reason else ""
         return {"correct": False, "reason": first_sentence or "result does not match the question"}
+
+
+_REACT_SYSTEM_MSG = (
+    "You are an expert SQL assistant. You may call tools to explore the database "
+    "before writing your answer. When you are ready, respond with only the SQL query "
+    "— no explanation, no markdown, no code fences."
+)
+
+_REACT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_sql",
+            "description": "Execute a SQL query against the database. Returns rows on success or an error message.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sql": {"type": "string", "description": "The SQL query to execute."}
+                },
+                "required": ["sql"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sample_rows",
+            "description": "Return up to 5 sample rows from a table to understand its contents and column values.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "table_name": {"type": "string", "description": "The name of the table to sample."}
+                },
+                "required": ["table_name"],
+            },
+        },
+    },
+]
+
+
+class ReActAgent(Agent):
+    def __init__(self, model: str = MODEL, max_retries: int = 6):
+        self.model = model
+        self.max_retries = max_retries
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ["OPENROUTER_API_KEY"],
+        )
+
+    def predict(self, question: str, db_id: str, executor: SQLExecutor, schema: dict) -> str:
+        schema_str = format_schema(db_id, schema)
+        messages = [
+            {"role": "system", "content": _REACT_SYSTEM_MSG},
+            {"role": "user", "content": f"Schema:\n{schema_str}\n\nQuestion: {question} /no-think"},
+        ]
+
+        last_sql = ""
+        for _ in range(self.max_retries):
+            resp = _chat(self.client, messages, self.model, tools=_REACT_TOOLS)
+            if not (resp and resp.choices):
+                break
+
+            msg = resp.choices[0].message
+
+            if not msg.tool_calls:
+                _, sql = _parse_response(resp)
+                return sql if sql else last_sql
+
+            # Append assistant turn (with tool_calls) as a dict so the SDK serialises it cleanly
+            messages.append({
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
+                    for tc in msg.tool_calls
+                ],
+            })
+
+            for tc in msg.tool_calls:
+                # Track last SQL sent to execute_sql so we have a fallback
+                if tc.function.name == "execute_sql":
+                    try:
+                        last_sql = json.loads(tc.function.arguments).get("sql", last_sql)
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+
+                tool_result = self._dispatch(tc, executor)
+                print(f"  [tool] {tc.function.name}({tc.function.arguments[:60]}) → {tool_result[:80]}")
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": tool_result,
+                })
+
+        # Fallback: if model never called execute_sql, generate SQL directly from original context
+        if not last_sql:
+            _, last_sql = _parse_response(_chat(self.client, messages[:2], self.model))
+        return last_sql
+
+    def _dispatch(self, tc, executor: SQLExecutor) -> str:
+        try:
+            args = json.loads(tc.function.arguments)
+        except (json.JSONDecodeError, AttributeError):
+            return "Error: could not parse tool arguments"
+
+        if tc.function.name == "execute_sql":
+            result = executor.execute(args.get("sql", ""))
+            if result.ok:
+                rows = list(result.rows)[:10]
+                return f"{len(result.rows)} row(s): {rows}"
+            return f"Error: {result.error}"
+
+        if tc.function.name == "sample_rows":
+            table = re.sub(r"\W", "", args.get("table_name", ""))  # strip non-word chars
+            result = executor.execute(f"SELECT * FROM {table} LIMIT 5")
+            if result.ok:
+                return f"{len(result.rows)} row(s): {list(result.rows)}"
+            return f"Error: {result.error}"
+
+        return f"Unknown tool: {tc.function.name}"
