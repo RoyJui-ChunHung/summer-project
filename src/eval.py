@@ -307,7 +307,7 @@ if __name__ == "__main__":
     elif args.agent == "verify":
         agent = VerifyAndReviseAgent(max_retries=args.max_retries)
     elif args.agent == "react":
-        agent = ReActAgent(max_retries=args.max_retries)
+        agent = ReActAgent(max_retries=max(args.max_retries, 8))
     elif args.agent == "single" or args.max_retries == 1:
         agent = SingleShotAgent()
     else:

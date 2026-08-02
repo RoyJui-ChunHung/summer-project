@@ -390,11 +390,40 @@ _REACT_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "describe_table",
+            "description": "Return column names and types for a table using PRAGMA table_info.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "table_name": {"type": "string", "description": "The name of the table to describe."}
+                },
+                "required": ["table_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_distinct_values",
+            "description": "Return up to 20 distinct values from a column to see exact string formats and enumerations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "table_name": {"type": "string", "description": "The table containing the column."},
+                    "column_name": {"type": "string", "description": "The column to get distinct values from."},
+                },
+                "required": ["table_name", "column_name"],
+            },
+        },
+    },
 ]
 
 
 class ReActAgent(Agent):
-    def __init__(self, model: str = MODEL, max_retries: int = 6):
+    def __init__(self, model: str = MODEL, max_retries: int = 8):
         self.model = model
         self.max_retries = max_retries
         self.client = OpenAI(
@@ -419,7 +448,15 @@ class ReActAgent(Agent):
 
             if not msg.tool_calls:
                 _, sql = _parse_response(resp)
-                return sql if sql else last_sql
+                # Guard 1: prose response — fall back to last clean execute_sql result.
+                if not _is_sql(sql):
+                    return last_sql
+                # Guard 2: final SQL may still error (e.g. wrong column name). Execute it
+                # before returning; if it fails, fall back to last_clean_sql so we never
+                # return a known-failing query.
+                if executor.execute(sql).ok:
+                    return sql
+                return last_sql
 
             # Append assistant turn (with tool_calls) as a dict so the SDK serialises it cleanly
             messages.append({
@@ -436,14 +473,16 @@ class ReActAgent(Agent):
             })
 
             for tc in msg.tool_calls:
-                # Track last SQL sent to execute_sql so we have a fallback
-                if tc.function.name == "execute_sql":
+                tool_result = self._dispatch(tc, executor)
+
+                # Only save SQL from execute_sql when it ran cleanly — same idea as
+                # last_clean_sql in VerifyAndReviseAgent, so the fallback never returns
+                # a known-failing query.
+                if tc.function.name == "execute_sql" and not tool_result.startswith("Error:"):
                     try:
                         last_sql = json.loads(tc.function.arguments).get("sql", last_sql)
                     except (json.JSONDecodeError, AttributeError):
                         pass
-
-                tool_result = self._dispatch(tc, executor)
                 print(f"  [tool] {tc.function.name}({tc.function.arguments[:60]}) → {tool_result[:80]}")
                 messages.append({
                     "role": "tool",
@@ -470,10 +509,27 @@ class ReActAgent(Agent):
             return f"Error: {result.error}"
 
         if tc.function.name == "sample_rows":
-            table = re.sub(r"\W", "", args.get("table_name", ""))  # strip non-word chars
+            table = re.sub(r"\W", "", args.get("table_name", ""))
             result = executor.execute(f"SELECT * FROM {table} LIMIT 5")
             if result.ok:
                 return f"{len(result.rows)} row(s): {list(result.rows)}"
+            return f"Error: {result.error}"
+
+        if tc.function.name == "describe_table":
+            table = re.sub(r"\W", "", args.get("table_name", ""))
+            result = executor.execute(f"PRAGMA table_info({table})")
+            if result.ok:
+                cols = [(r[1], r[2]) for r in result.rows]  # (name, type)
+                return f"Columns: {cols}"
+            return f"Error: {result.error}"
+
+        if tc.function.name == "get_distinct_values":
+            table = re.sub(r"\W", "", args.get("table_name", ""))
+            col   = re.sub(r"\W", "", args.get("column_name", ""))
+            result = executor.execute(f"SELECT DISTINCT {col} FROM {table} LIMIT 20")
+            if result.ok:
+                values = [r[0] for r in result.rows]
+                return f"{len(values)} distinct value(s): {values}"
             return f"Error: {result.error}"
 
         return f"Unknown tool: {tc.function.name}"

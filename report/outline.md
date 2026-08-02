@@ -1,4 +1,4 @@
-# Does Execution Feedback Help? A Three-Way Study of Text-to-SQL Agents on Spider
+# Does Execution Feedback Help? A Five-Way Study of Text-to-SQL Agents on Spider
 
 ## 1. Introduction
 
@@ -6,7 +6,7 @@ Large language models can translate natural language questions into SQL with imp
 
 One proposed remedy is the execution feedback loop: generate SQL, execute it against the target database, observe the result or error, and revise. If the query raises a runtime error, the error message is a concrete, actionable signal the model can act on. A weaker alternative is blind self-correction: ask the model to review its own output without executing it, in the style of DIN-SQL's self-review pass. This study asks which signal — execution error, blind review, or no feedback at all — translates into measurable accuracy gains on hard queries.
 
-We evaluate three agents on the Spider Hard and Extra Hard subsets using the same model and prompt. The feedback loop raises execution accuracy (EX) by 7.6 percentage points over the single-shot baseline; blind self-correction gains 4.5 percentage points. The analysis reveals a ceiling: execution feedback eliminates all runtime errors but converts them into silent wrong-result failures, which neither agent type can fix without richer output-level feedback.
+We evaluate five agents on the Spider Hard and Extra Hard subsets using the same model and prompt. The feedback loop raises execution accuracy (EX) by 7.6 percentage points over the single-shot baseline; blind self-correction gains 4.5 percentage points. A verify-and-revise agent nearly matches the feedback loop (70.1% vs 70.5%) at higher cost. A ReActAgent with four tools (function calling) underperforms single-shot (58.0%), suggesting that autonomous tool use does not pay off on clean Spider schemas with this model. The analysis reveals a ceiling: execution feedback eliminates all runtime errors but converts them into silent wrong-result failures, which no agent in this study could fix without richer output-level feedback.
 
 ## 2. Related Work
 
@@ -16,13 +16,15 @@ In the text-to-SQL setting, DIN-SQL (Pourreza & Rafiei, 2023) decomposes queries
 
 ## 3. Method
 
-The agent is structured around three components. `SQLExecutor` (src/tools.py) wraps SQLite execution, returning an `ExecutionResult` that holds either the result rows or an error message. `format_schema` renders a Spider database schema as CREATE TABLE statements, giving the model a compact representation of the available tables and columns. Three agents (src/agents.py) share the same abstract interface:
+The agent is structured around three components. `SQLExecutor` (src/tools.py) wraps SQLite execution, returning an `ExecutionResult` that holds either the result rows or an error message. `format_schema` renders a Spider database schema as CREATE TABLE statements, giving the model a compact representation of the available tables and columns. Five agents (src/agents.py) share the same abstract interface:
 
 - **SingleShotAgent** calls the LLM once and returns the SQL as-is.
 - **FeedbackLoopAgent** calls the LLM, executes the SQL via `SQLExecutor`, and on error appends the error message to the conversation and retries — up to `max_retries` attempts. Stops early on first successful execution.
 - **BlindCorrectionAgent** calls the LLM once to generate SQL, then makes up to `max_retries − 1` additional calls asking the model to review its own output against the schema and question, without executing. Stops early if the revised SQL is identical to the current one (normalised to lowercase and collapsed whitespace).
+- **VerifyAndReviseAgent** executes the SQL, then calls a separate verifier LLM to judge whether the result correctly answers the question. If the verifier says NO, it revises and retries. Falls back to the last clean execution if a revision errors.
+- **ReActAgent** uses OpenAI function calling to give the LLM autonomous access to four tools: `execute_sql`, `sample_rows`, `describe_table`, and `get_distinct_values`. The model decides which tools to call and when to stop exploring and return SQL.
 
-All three agents use the same model, system prompt, and schema formatter. The only difference is whether and how feedback is provided.
+All five agents use the same model, system prompt, and schema formatter. They differ in whether and how feedback is provided, and whether the LLM can invoke tools autonomously.
 
 ## 4. Experimental Setup
 
@@ -32,17 +34,19 @@ All three agents use the same model, system prompt, and schema formatter. The on
 
 **Metric.** Execution accuracy (EX): both gold and predicted SQL are executed against the SQLite database and results are compared as unordered row sets (frozensets). This is insensitive to column aliases and row ordering.
 
-**Conditions.** Single-shot (`max_retries=1`), blind self-correction (`max_retries=3`), and feedback loop (`max_retries=3`). The oracle baseline (gold SQL as prediction) verifies the evaluation infrastructure and achieves ~100% EX.
+**Conditions.** Single-shot (`max_retries=1`), blind self-correction (`max_retries=3`), feedback loop (`max_retries=3`), verify-and-revise (`max_retries=3`), and ReActAgent (`max_retries=8`; higher budget to allow tool exploration before producing final SQL). The oracle baseline (gold SQL as prediction) verifies the evaluation infrastructure and achieves ~100% EX.
 
-**Implementation note.** An early run with `max_tokens=512` produced 28% EX because Qwen3's internal reasoning tokens consumed the entire token budget, leaving the response content empty. Raising the limit to 2048 eliminated this artifact (0/224 empty predictions across all three reported runs). Qwen3 occasionally prepends reasoning prose before the SQL in its response; the parser extracts the first top-level SELECT or WITH statement to handle this.
+**Implementation note.** An early run with `max_tokens=512` produced 28% EX because Qwen3's internal reasoning tokens consumed the entire token budget, leaving the response content empty. Raising the limit to 2048 eliminated this artifact (0/224 empty predictions across all runs). Qwen3 occasionally prepends reasoning prose before the SQL in its response; the parser extracts the first top-level SELECT or WITH statement to handle this.
 
 ## 5. Results
 
-| Condition | Correct | EX | vs single-shot |
-|---|---|---|---|
-| Single-shot | 141 / 224 | 62.9% | — |
-| Blind self-correction | 151 / 224 | 67.4% | +4.5pp |
-| Feedback loop | 158 / 224 | 70.5% | +7.6pp |
+| Agent | Tools | Correct | EX | vs single-shot |
+|---|---|---|---|---|
+| Single-shot | none | 141/224 | 62.9% | — |
+| Blind self-correction | none | 151/224 | 67.4% | +4.5pp |
+| Feedback loop | execute_sql | 158/224 | 70.5% | +7.6pp |
+| Verify-and-revise | execute_sql | 157/224 | 70.1% | +7.2pp |
+| ReActAgent | execute_sql, sample_rows, describe_table, get_distinct_values | 130/224 | 58.0% | −4.9pp |
 
 **By hardness.** Hard questions: single-shot 64.2%, blind 65.5%, feedback 68.9%. Extra Hard questions improve more across the board — single-shot 60.5%, blind 71.1%, feedback 73.7% — consistent with Extra Hard queries more often producing syntax errors that both review and retry loops can address.
 
@@ -62,7 +66,15 @@ All three agents use the same model, system prompt, and schema formatter. The on
 
 ## 6. Analysis
 
-**Failure breakdown.** The single-shot run produced 32 execution errors and 51 wrong-result failures (83 total). Blind self-correction reduces execution errors to 14 — catching some syntax mistakes through review alone — while wrong-result rises to 59 (73 total failures). The feedback loop eliminates all 32 execution errors entirely and brings total failures to 66, all wrong-result. Critically, execution errors that the feedback loop "fixes" often become wrong-result failures: the model retries, avoids the syntax mistake, but produces logically incorrect SQL. Feedback converts crashes into silent wrong answers.
+**Failure breakdown.**
+
+| Reason | Single-shot | Blind | Feedback | Verify | ReAct |
+|---|---|---|---|---|---|
+| execution_error | 32 | 14 | 0 | 1 | 0 |
+| wrong_result | 51 | 59 | 66 | 66 | 94 |
+| Total failures | 83 | 73 | 66 | 67 | 94 |
+
+The single-shot run produced 32 execution errors and 51 wrong-result failures (83 total). Blind self-correction reduces execution errors to 14 — catching some syntax mistakes through review alone — while wrong-result rises to 59 (73 total failures). The feedback loop eliminates all 32 execution errors entirely and brings total failures to 66, all wrong-result. Verify-and-revise nearly matches feedback (70.1% vs 70.5%) at higher API cost, with no meaningful reduction in wrong-result. ReActAgent eliminates execution errors (0) but wrong-result jumps to 94 — the model uses tools to explore but returns exploration SQL as its final answer, losing track of the original question.
 
 **Where feedback helps.** Feedback loop shows the largest gains on patterns that frequently produce runtime errors on a first attempt: NOT IN (+8.7pp), Nested SELECT (+8.9pp), JOIN (+10.5pp), and HAVING (+13.3pp). INTERSECT shows the largest fb-delta (+18.4pp over single-shot), consistent with INTERSECT/UNION/EXCEPT syntax being easy to get slightly wrong.
 
@@ -78,4 +90,4 @@ This study evaluates a single model (Qwen3.5-9b) with a fixed prompt. Conclusion
 
 Two Qwen3-specific mitigations were required: the `/no-think` prompt suffix to suppress extended-reasoning mode, and raising `max_tokens` to 2048 to prevent the reasoning budget from consuming the entire response. These may not generalise to other models.
 
-Future work should explore: (1) running the same three-way comparison with a second model (GPT-4o-mini) to test whether stronger models show smaller feedback gains (fewer first-attempt syntax errors); (2) result-level feedback — showing the model a sample of its returned rows — to attack wrong-result failures; (3) schema retrieval to handle databases with many tables.
+Future work should explore: (1) running the same comparison with a second model (GPT-4o-mini) to test whether stronger models show smaller feedback gains and whether ReAct-style tool use becomes effective at larger scale; (2) result-level feedback — showing the model a sample of its returned rows — to attack wrong-result failures; (3) evaluating on BIRD, where larger and noisier schemas would make schema retrieval and value lookup tools more impactful than on Spider.

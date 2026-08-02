@@ -121,4 +121,53 @@ python3 src/eval.py --agent verify --max_retries 3 --output experiments/run_veri
 
 ---
 
+## Exp 004 — ReActAgent with Function Calling
+
+**Date:** 2026-08-01
+**Model:** `qwen/qwen3.5-9b` (via OpenRouter)
+**Dataset:** Spider 1.0 dev set — Hard + Extra Hard (224 examples)
+**Command:**
+```
+python3 src/eval.py --agent react --output experiments/run_react.json
+```
+
+**Agent:** `ReActAgent`, `max_retries=8`. Four tools available via OpenAI function calling: `execute_sql`, `sample_rows`, `describe_table`, `get_distinct_values`. Loop: call API with `tools=[...]`, execute any `tool_calls`, append results, repeat until model outputs SQL directly (no tool calls). Before returning final SQL, execute it; if it errors, fall back to the last clean `execute_sql` result.
+
+### Results
+
+| Agent | max_retries | Correct | EX | vs single-shot | vs feedback | Output file |
+|---|---|---|---|---|---|---|
+| Single-shot | 1 | 141/224 | **62.9%** | — | −7.6pp | `run_retries1.json` |
+| ReActAgent | 8 | 130/224 | **58.0%** | −4.9pp | −12.5pp | `run_react.json` |
+| Feedback loop | 3 | 158/224 | **70.5%** | +7.6pp | — | `run_retries3.json` |
+
+### Tool Call Statistics
+
+| Tool | Calls |
+|---|---|
+| `execute_sql` | 153 |
+| `describe_table` | 89 |
+| `sample_rows` | 58 |
+| `get_distinct_values` | 39 |
+| **Total** | **339 (~1.5/ex)** |
+
+### Failure Breakdown
+
+| Reason | Single-shot | Feedback | ReActAgent |
+|---|---|---|---|
+| execution_error | 32 | 0 | 0 |
+| wrong_result | 51 | 66 | 94 |
+| Total failures | 83 | 66 | 94 |
+
+### Key Observations
+
+- **ReActAgent underperforms single-shot (58.0% vs 62.9%)** — function calling on this model/task combination hurts rather than helps.
+- **0 execution errors** (down from 54 in earlier buggy runs). The final-SQL execution guard ensures we never return a known-failing query.
+- **Wrong_result rose to 94** — the dominant failure mode. The fallback to `last_clean_sql` returns exploration queries (e.g. `SELECT * FROM stadium`) that run cleanly but answer the wrong question, scoring as wrong_result.
+- **Tool use rate is low at ~1.5 calls/ex.** For genuine ReAct-style multi-step reasoning 3–5+ tool calls per example would be expected. Qwen3 often skips tool calls entirely and writes SQL directly, or calls one tool and then describes the result in prose rather than returning SQL.
+- **Per-example comparison vs feedback: +11 fixes, −39 regressions, net −28.** The 11 fixes show the tools occasionally help; the 39 regressions show the model frequently loses track of the original question after exploring, returning an exploration query as its final answer.
+- **Root cause:** Qwen3 is not well-calibrated for OpenAI-style function calling in a SQL generation task. It uses `execute_sql` to verify intermediate results but then outputs prose ("The answer is X rows") instead of returning the final SQL — triggering the prose guard and falling back to the exploration SQL. A model better trained for agentic function calling (e.g. GPT-4o) would likely behave differently.
+
+---
+
 *Add new experiments below this line.*
