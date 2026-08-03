@@ -51,5 +51,6 @@ Traditional text-to-SQL systems generate SQL in a single shot. When the query fa
 - [x] Week 4 — baseline selection reading notes (DIN-SQL, DAIL-SQL) → [`notes/week4/`](notes/week4/)
 - [x] Week 5 — agentic-methods reading notes (MAC-SQL, CHESS) → [`notes/week5/`](notes/week5/)
 - [x] OOP refactor: three-agent harness (`tools.py` / `agents.py` / `eval.py`) → [`src/`](src/)
-- [x] Three-way experiment (Qwen3.5-9b, Spider Hard/Extra Hard, n=224): single-shot **62.9%** / blind self-correction **67.4%** / feedback loop **70.5%** → [`experiments/`](experiments/)
-- [ ] Verify-and-revise agent (fourth condition, targets wrong-result ceiling) — defined in [`notes/week5/`](notes/week5/), not yet implemented
+- [x] Five-way experiment (Qwen3.5-9b, Spider Hard/Extra Hard, n=224): single-shot **62.9%** / blind **67.4%** / feedback loop **70.5%** / verify-and-revise **70.1%** / ReAct **58.0%** → [`experiments/`](experiments/)
+- [x] Verify-and-revise agent (Exp 003): execute → verify rows → revise if wrong; **70.1% EX**, net ≈ 0 new correct answers over feedback loop → [`experiments/run_verify.json`](experiments/run_verify.json)
+- [x] ReActAgent with function calling (Exp 004): four tools, LLM decides when to call; **58.0% EX** — underperforms single-shot on Qwen3.5-9b → [`experiments/run_react.json`](experiments/run_react.json)
