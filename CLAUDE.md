@@ -23,8 +23,14 @@ python3 src/eval.py --agent feedback --max_retries 3 --output experiments/run_re
 # Blind self-correction (generate + 2 review rounds, no execution)
 python3 src/eval.py --agent blind --max_retries 3 --output experiments/run_blind.json
 
+# Verify-and-revise (execute → verify rows → revise if wrong)
+python3 src/eval.py --agent verify --max_retries 3 --output experiments/run_verify.json
+
+# ReAct with function calling (LLM decides which tools to call; uses max 8 iterations)
+python3 src/eval.py --agent react --output experiments/run_react.json
+
 # Quick iteration on a few examples
-python3 src/eval.py --agent blind --limit 10
+python3 src/eval.py --agent verify --limit 10
 
 # Three-way failure analysis (pattern / hardness / failure reason)
 python3 experiments/analyze_failures.py
@@ -42,18 +48,21 @@ There are no tests, linters, or a dependency file. Python deps: `openai`, `pytho
 Three modules; imports flow one way: `eval.py` → `agents.py` → `tools.py`.
 
 **`src/tools.py`**
+- `Tool` — abstract base class with `name`, `description`, and `__call__(arg)`.
 - `ExecutionResult` — dataclass holding `rows: Optional[frozenset]`, `error: Optional[str]`, and an `ok` property.
-- `SQLExecutor(db_path)` — wraps SQLite; `execute(sql) → ExecutionResult`.
+- `SQLExecutor(Tool, db_path)` — wraps SQLite; `execute(sql) → ExecutionResult`; `__call__` delegates to `execute`.
 
 **`src/agents.py`**
 - `format_schema(db_id, schema)` — renders a Spider tables.json entry as CREATE TABLE statements for the prompt.
 - `_parse_response(resp)` — extracts SQL from a completion; handles code fences and strips Qwen3 reasoning prose by finding the first top-level `SELECT`/`WITH` line.
-- `_chat(client, messages, model)` — wraps `chat.completions.create` with exponential backoff (5/10/20/40/80s), 60s timeout, and retry on empty choices.
-- `_is_sql(s)` — returns True if `s` starts with a SQL keyword; used to guard against review rounds returning prose.
+- `_chat(client, messages, model, tools=None)` — wraps `chat.completions.create` with exponential backoff (5/10/20/40/80s), 60s timeout, retry on empty choices, and catches `ValueError`/`JSONDecodeError` from malformed OpenRouter responses. Passes `tools` to the API when provided.
+- `_is_sql(s)` — returns True if `s` starts with a SQL keyword; used to guard against review rounds and ReAct final responses returning prose.
 - `Agent` — abstract base class; `predict(question, db_id, executor, schema) → str`.
 - `SingleShotAgent(model)` — one LLM call, returns SQL directly.
 - `FeedbackLoopAgent(model, max_retries)` — retry loop: calls LLM, runs `executor.execute(sql)`, feeds `result.error` back if it fails, repeats up to `max_retries` times.
 - `BlindCorrectionAgent(model, max_retries, flavor)` — generates SQL on pass 1, then makes up to `max_retries − 1` blind review calls (no execution). `flavor` selects the review prompt (`generic` or `gentle`). Stops early if revised SQL is identical (normalised). Guards against non-SQL responses with `_is_sql`.
+- `VerifyAndReviseAgent(model, max_retries)` — execute-then-verify loop: generates SQL, executes it, and if clean calls a separate verifier LLM with the question, schema, and up to 10 returned rows. If verifier says NO, feeds the diagnosis back and retries. Saves `last_clean_sql` so a verify-triggered revision that errors falls back to the last clean result rather than an errored query. Exposes `_last_calls`, `_last_verify_called`, `_last_verify_flagged` for per-example cost tracing in eval.py.
+- `ReActAgent(model, max_retries=8)` — OpenAI function-calling loop: sends `_REACT_TOOLS` to the API, executes any `tool_calls` returned, appends results, and repeats until the model outputs SQL directly. Four tools: `execute_sql`, `sample_rows`, `describe_table`, `get_distinct_values`. Only saves `last_clean_sql` from successful `execute_sql` calls. Before returning final SQL, validates it with `executor.execute()`; falls back to `last_clean_sql` if it errors.
 - `MODEL` constant controls which model all agents default to. Swap this string to change models; nothing else needs to change.
 
 **`src/eval.py`**
@@ -61,7 +70,7 @@ Three modules; imports flow one way: `eval.py` → `agents.py` → `tools.py`.
 - `load_schema()` — loads tables.json, indexes by db_id.
 - `evaluate(spider_dir, split, oracle, limit, agent, output_file)` — main loop; creates one `SQLExecutor` per example, calls `agent.predict()`, scores with execution accuracy (EX): gold and pred results compared as `frozenset`s of rows (order-independent). Writes a per-example checkpoint (`.ckpt` JSONL) after each example so crashes can resume without redoing work.
 - `--output` writes a JSON with a `results` array; `experiments/analyze_failures.py` reads this schema — keep the record fields (`gold_sql`, `pred_sql`, `hardness`, `ex_score`, `reason`) stable.
-- CLI: `--agent {single,feedback,blind}` selects the agent; `--max_retries N` controls attempts; `--flavor {generic,gentle}` selects the blind review prompt.
+- CLI: `--agent {single,feedback,blind,verify,react}` selects the agent; `--max_retries N` controls attempts; `--flavor {generic,gentle}` selects the blind review prompt. `--agent react` uses `max(max_retries, 8)` to ensure enough iterations for tool exploration.
 
 ## Known Gotchas
 
