@@ -48,21 +48,28 @@ All five agents use the same model, system prompt, and schema formatter. They di
 | Verify-and-revise | execute_sql | 157/224 | 70.1% | +7.2pp |
 | ReActAgent | execute_sql, sample_rows, describe_table, get_distinct_values | 130/224 | 58.0% | −4.9pp |
 
-**By hardness.** Hard questions: single-shot 64.2%, blind 65.5%, feedback 68.9%. Extra Hard questions improve more across the board — single-shot 60.5%, blind 71.1%, feedback 73.7% — consistent with Extra Hard queries more often producing syntax errors that both review and retry loops can address.
+**By hardness.**
 
-**By SQL pattern.** Table 2 shows EX broken down by the structural pattern present in the gold SQL. The fb-delta column shows feedback loop gain over single-shot.
-
-| Pattern | n | Single-shot | Blind | Feedback | fb-delta |
+| | Single-shot | Blind | Feedback | Verify | ReAct |
 |---|---|---|---|---|---|
-| Nested SELECT | 157 | 63.7% | 67.5% | 72.6% | +8.9pp |
-| JOIN | 105 | 52.4% | 59.0% | 62.9% | +10.5pp |
-| NOT IN | 46 | 82.6% | 80.4% | 91.3% | +8.7pp |
-| GROUP BY | 39 | 30.8% | 43.6% | 38.5% | +7.7pp |
-| INTERSECT | 38 | 57.9% | 81.6% | 76.3% | +18.4pp |
-| EXCEPT | 31 | 71.0% | 71.0% | 77.4% | +6.5pp |
-| ORDER BY | 29 | 65.5% | 65.5% | 69.0% | +3.4pp |
-| HAVING | 15 | 26.7% | 40.0% | 40.0% | +13.3pp |
-| UNION | 11 | 45.5% | 36.4% | 54.5% | +9.1pp |
+| Hard (n=148) | 64.2% | 65.5% | 68.9% | 68.2% | 58.1% |
+| Extra Hard (n=76) | 60.5% | 71.1% | 73.7% | 73.7% | 57.9% |
+
+Extra Hard questions improve more across the board for the feedback-style agents, consistent with Extra Hard queries more often producing syntax errors that retry loops can address. Verify-and-revise matches feedback exactly on Extra Hard (73.7%). ReAct trails single-shot on both hardness levels.
+
+**By SQL pattern.** Table 2 shows EX broken down by the structural pattern present in the gold SQL.
+
+| Pattern | n | Single-shot | Blind | Feedback | Verify | ReAct |
+|---|---|---|---|---|---|---|
+| Nested SELECT | 157 | 63.7% | 67.5% | 72.6% | 72.0% | 56.1% |
+| JOIN | 105 | 52.4% | 59.0% | 62.9% | 61.0% | 47.6% |
+| NOT IN | 46 | 82.6% | 80.4% | 91.3% | 89.1% | 73.9% |
+| GROUP BY | 39 | 30.8% | 43.6% | 38.5% | 46.2% | 35.9% |
+| INTERSECT | 38 | 57.9% | 81.6% | 76.3% | 78.9% | 60.5% |
+| EXCEPT | 31 | 71.0% | 71.0% | 77.4% | 74.2% | 58.1% |
+| ORDER BY | 29 | 65.5% | 65.5% | 69.0% | 72.4% | 55.2% |
+| HAVING | 15 | 26.7% | 40.0% | 40.0% | 53.3% | 46.7% |
+| UNION | 11 | 45.5% | 36.4% | 54.5% | 54.5% | 54.5% |
 
 ## 6. Analysis
 
