@@ -247,6 +247,38 @@ class BlindCorrectionAgent(Agent):
         return sql
 
 
+def _verify_result(client, model, question: str, schema_str: str, sql: str, rows) -> dict:
+    """Call the verifier LLM. Returns {correct: bool, reason: str}."""
+    rows_list = list(rows)
+    total = len(rows_list)
+    if total == 0:
+        rows_str = "(empty result set)"
+    else:
+        sample = rows_list[:10]
+        rows_str = "\n".join(str(r) for r in sample)
+        if total > 10:
+            rows_str += f"\n({total} rows total, showing first 10)"
+
+    prompt = _VERIFY_PROMPT.format(
+        question=question, schema_str=schema_str, sql=sql, rows_str=rows_str,
+    )
+    resp = _chat(client, [
+        {"role": "system", "content": _VERIFY_SYSTEM},
+        {"role": "user",   "content": prompt},
+    ], model)
+    raw, _ = _parse_response(resp)
+
+    m = re.search(r'\b(YES|NO)\b', raw, re.IGNORECASE)
+    if m is None:
+        return {"correct": True, "reason": ""}
+    if m.group(1).upper() == "YES":
+        return {"correct": True, "reason": ""}
+    rest = raw[m.end():].strip()
+    reason = re.sub(r'^[:\s]+', '', rest).strip()
+    first_sentence = re.split(r'[.\n]', reason)[0].strip() if reason else ""
+    return {"correct": False, "reason": first_sentence or "result does not match the question"}
+
+
 class VerifyAndReviseAgent(Agent):
     def __init__(self, model: str = MODEL, max_retries: int = 3):
         self.model = model
@@ -320,39 +352,89 @@ class VerifyAndReviseAgent(Agent):
         return last_clean_sql if last_clean_sql else last_sql
 
     def _verify(self, question: str, schema_str: str, sql: str, rows) -> dict:
-        rows_list = list(rows)
-        total = len(rows_list)
-        if total == 0:
-            rows_str = "(empty result set)"
-        else:
-            sample = rows_list[:10]
-            rows_str = "\n".join(str(r) for r in sample)
-            if total > 10:
-                rows_str += f"\n({total} rows total, showing first 10)"
+        return _verify_result(self.client, self.model, question, schema_str, sql, rows)
 
-        prompt = _VERIFY_PROMPT.format(
-            question=question,
-            schema_str=schema_str,
-            sql=sql,
-            rows_str=rows_str,
+
+class PipelineAgent(Agent):
+    """Three-stage pipeline: error feedback → blind review → verify + revise.
+    Each stage has a fixed slot; _last_stage_changed records which one (if any) altered the SQL.
+    """
+
+    def __init__(self, model: str = MODEL, error_retries: int = 2):
+        self.model = model
+        self.error_retries = error_retries
+        self.max_retries = error_retries + 3  # upper bound on total calls per example
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ["OPENROUTER_API_KEY"],
         )
-        resp = _chat(self.client, [
-            {"role": "system", "content": _VERIFY_SYSTEM},
-            {"role": "user", "content": prompt},
-        ], self.model)
-        raw, _ = _parse_response(resp)
+        self._last_stage_changed = None  # None | "error_feedback" | "blind_review" | "verify"
 
-        m = re.search(r'\b(YES|NO)\b', raw, re.IGNORECASE)
-        if m is None:
-            return {"correct": True, "reason": ""}  # can't parse; accept conservatively
+    def predict(self, question: str, db_id: str, executor: SQLExecutor, schema: dict) -> str:
+        self._last_stage_changed = None
+        schema_str = format_schema(db_id, schema)
 
-        if m.group(1).upper() == "YES":
-            return {"correct": True, "reason": ""}
+        # ── Stage 1: error feedback ──────────────────────────────────────────
+        messages = [
+            {"role": "system", "content": _SYSTEM_MSG},
+            {"role": "user",   "content": f"Schema:\n{schema_str}\n\nQuestion: {question}\n\nSQL: /no-think"},
+        ]
+        raw, sql = _parse_response(_chat(self.client, messages, self.model))
+        initial_sql = sql
+        for _ in range(self.error_retries - 1):
+            if executor.execute(sql).ok:
+                break
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({
+                "role": "user",
+                "content": f"That SQL raised an error: {executor.execute(sql).error}\nPlease fix it and return only the corrected SQL. /no-think",
+            })
+            raw, sql = _parse_response(_chat(self.client, messages, self.model))
+        if sql != initial_sql:
+            self._last_stage_changed = "error_feedback"
 
-        rest = raw[m.end():].strip()
-        reason = re.sub(r'^[:\s]+', '', rest).strip()
-        first_sentence = re.split(r'[.\n]', reason)[0].strip() if reason else ""
-        return {"correct": False, "reason": first_sentence or "result does not match the question"}
+        # ── Stage 2: blind review (1 pass, only when stage 1 produced clean SQL) ──
+        if executor.execute(sql).ok:
+            review_messages = [
+                {"role": "system", "content": _SYSTEM_MSG},
+                {"role": "user", "content": (
+                    f"Schema:\n{schema_str}\n\n"
+                    f"Question: {question}\n\n"
+                    f"Current SQL:\n{sql}\n\n"
+                    f"{_REVIEW_PROMPTS['generic']}"
+                )},
+            ]
+            _, revised = _parse_response(_chat(self.client, review_messages, self.model))
+            norm = lambda s: " ".join(s.lower().split())
+            if _is_sql(revised) and norm(revised) != norm(sql) and executor.execute(revised).ok:
+                sql = revised
+                self._last_stage_changed = "blind_review"
+
+        # ── Stage 3: verify + 1 revision (only when we have clean SQL) ──────
+        result = executor.execute(sql)
+        if not result.ok:
+            return sql
+        verdict = _verify_result(self.client, self.model, question, schema_str, sql, result.rows)
+        if verdict["correct"]:
+            return sql
+
+        revision_messages = [
+            {"role": "system", "content": _SYSTEM_MSG},
+            {"role": "user", "content": (
+                f"Schema:\n{schema_str}\n\n"
+                f"Question: {question}\n\n"
+                f"Current SQL:\n{sql}\n\n"
+                "The query ran without errors but the result appears incorrect.\n"
+                f"Verifier feedback: {verdict['reason']}\n"
+                "Revise the SQL to fix this and return only the corrected SQL. /no-think"
+            )},
+        ]
+        _, revised = _parse_response(_chat(self.client, revision_messages, self.model))
+        if _is_sql(revised) and executor.execute(revised).ok:
+            if " ".join(revised.lower().split()) != " ".join(sql.lower().split()):
+                self._last_stage_changed = "verify"
+            return revised
+        return sql
 
 
 _REACT_SYSTEM_MSG = (

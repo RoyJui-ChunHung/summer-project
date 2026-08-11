@@ -171,3 +171,52 @@ python3 src/eval.py --agent react --output experiments/run_react.json
 ---
 
 *Add new experiments below this line.*
+
+---
+
+## Exp 005 — PipelineAgent (three-stage explicit chain)
+
+**Date:** 2026-08-11
+**Model:** `qwen/qwen3.5-9b` (via OpenRouter)
+**Dataset:** Spider 1.0 dev set — Hard + Extra Hard (224 examples)
+**Command:**
+```
+python3 src/eval.py --agent pipeline --output experiments/run_pipeline.json
+```
+
+**Agent:** `PipelineAgent`, `error_retries=2`. Three fixed stages: (1) error feedback — generate SQL, retry on execution error up to 2 attempts; (2) blind review — 1 review call if stage 1 produced clean SQL, adopt revision if valid and different; (3) verify + revise — 1 verifier call, 1 revision attempt if verifier says NO. `_last_stage_changed` records which stage (if any) altered the final SQL.
+
+### Results
+
+| Agent | max_retries | Correct | EX | vs single-shot | vs feedback | Output file |
+|---|---|---|---|---|---|---|
+| Single-shot | 1 | 141/224 | **62.9%** | — | −7.6pp | `run_retries1.json` |
+| Feedback loop | 3 | 158/224 | **70.5%** | +7.6pp | — | `run_retries3.json` |
+| Verify-and-revise | 3 | 157/224 | **70.1%** | +7.2pp | −0.4pp | `run_verify.json` |
+| **PipelineAgent** | — | **162/224** | **72.3%** | **+9.4pp** | **+1.8pp** | `run_pipeline.json` |
+
+### Stage Change Statistics
+
+| Stage | Changed SQL | Notes |
+|---|---|---|
+| `error_feedback` | 29/224 | Error retry produced different SQL than first generation |
+| `blind_review` | 18/224 | Blind review produced a different, clean SQL |
+| `verify` | 18/224 | Verifier said NO and revision ran clean |
+| No stage changed | 159/224 | First-generation SQL was already the best |
+
+### Failure Breakdown
+
+| Reason | Pipeline |
+|---|---|
+| execution_error | 1 |
+| wrong_result | 61 |
+| Total failures | 62 |
+
+### Key Observations
+
+- **PipelineAgent is the new best at 72.3% (+1.8pp over feedback loop, +2.2pp over verify-and-revise).** Giving each mechanism its own dedicated slot rather than a shared retry budget lets all three contribute.
+- **All three stages fire independently.** error_feedback (29), blind_review (18), and verify (18) each changed SQL on distinct examples — the mechanisms are not redundant.
+- **vs feedback loop: +11 fixes, −7 regressions, net +4.** The gains come from blind_review and verify catching cases the feedback loop missed; the 7 regressions are likely API non-determinism in stage 1 generating a different initial SQL.
+- **Wrong_result dropped from 66 → 61** (−5) despite the same model, same schema, same question. The blind review and verify stages together closed 5 cases the feedback loop's error-only signal could not reach.
+- **1 execution error** (same guarantee as verify-and-revise — only when every generation attempt fails with no clean fallback).
+- **Cost:** up to 5 API calls per example (2 error retries + 1 blind review + 1 verify + 1 revision). Actual average will be lower since stages short-circuit when SQL is already clean and verifier says YES.

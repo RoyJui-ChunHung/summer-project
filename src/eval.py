@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from agents import Agent, BlindCorrectionAgent, FeedbackLoopAgent, ReActAgent, SingleShotAgent, VerifyAndReviseAgent
+from agents import Agent, BlindCorrectionAgent, FeedbackLoopAgent, PipelineAgent, ReActAgent, SingleShotAgent, VerifyAndReviseAgent
 from tools import SQLExecutor
 
 
@@ -178,6 +178,8 @@ def evaluate(
             record["calls"]          = agent._last_calls
             record["verify_called"]  = agent._last_verify_called
             record["verify_flagged"] = agent._last_verify_flagged
+        if isinstance(agent, PipelineAgent):
+            record["stage_changed"] = agent._last_stage_changed
         results.append(record)
         if ckpt_file:
             with open(ckpt_file, "a") as f:
@@ -199,6 +201,8 @@ def evaluate(
         mode = f"blind-correction/{agent.flavor} (max_retries={agent.max_retries})"
     elif isinstance(agent, VerifyAndReviseAgent):
         mode = f"verify-and-revise (max_retries={agent.max_retries})"
+    elif isinstance(agent, PipelineAgent):
+        mode = f"pipeline (error_retries={agent.error_retries})"
     elif isinstance(agent, ReActAgent):
         mode = f"react (max_retries={agent.max_retries})"
     else:
@@ -211,6 +215,13 @@ def evaluate(
     if total > 0:
         print(f"  EX      : {correct / total:.1%}")
     print("=" * 55)
+
+    if isinstance(agent, PipelineAgent) and results:
+        for stage in ("error_feedback", "blind_review", "verify"):
+            count = sum(1 for r in results if r.get("stage_changed") == stage)
+            print(f"  Stage '{stage}' changed SQL : {count}/{total}")
+        unchanged = sum(1 for r in results if r.get("stage_changed") is None)
+        print(f"  No stage changed SQL       : {unchanged}/{total}")
 
     if isinstance(agent, VerifyAndReviseAgent) and results:
         vc  = sum(1 for r in results if r.get("verify_called"))
@@ -285,8 +296,8 @@ if __name__ == "__main__":
         help="Save per-example results to this JSON file (e.g. experiments/run1.json)",
     )
     parser.add_argument(
-        "--agent", choices=["single", "feedback", "blind", "verify", "react"], default=None,
-        help="Agent type: single, feedback (default), blind, verify, or react",
+        "--agent", choices=["single", "feedback", "blind", "verify", "react", "pipeline"], default=None,
+        help="Agent type: single, feedback (default), blind, verify, react, or pipeline",
     )
     parser.add_argument(
         "--flavor", choices=["generic", "gentle"], default="generic",
@@ -302,6 +313,8 @@ if __name__ == "__main__":
 
     if args.oracle:
         agent = None
+    elif args.agent == "pipeline":
+        agent = PipelineAgent()
     elif args.agent == "blind":
         agent = BlindCorrectionAgent(max_retries=args.max_retries, flavor=args.flavor)
     elif args.agent == "verify":
