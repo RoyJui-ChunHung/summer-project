@@ -1,8 +1,8 @@
-# Does Execution Feedback Help? A Five-Way Study of Text-to-SQL Agents on Spider
+# Does Execution Feedback Help? A Study of Correction and Tool-Use Mechanisms for Text-to-SQL on Spider
 
 ## Abstract
 
-We evaluate five text-to-SQL agents on the Spider Hard and Extra Hard subset (n = 224) using Qwen3.5-9b as the backbone model. A feedback loop that retries on execution errors achieves the highest execution accuracy at 70.5% (+7.6 pp over single-shot baseline). Blind self-correction reaches 67.4% without execution access. A verify-and-revise agent that checks returned rows against the question nearly ties the feedback loop at 70.1% but makes 2.71 API calls per example versus ~1.2 for the feedback loop. A ReActAgent with four tools and OpenAI function calling drops below the single-shot baseline at 58.0% (−4.9 pp). Analysis shows that execution feedback eliminates all runtime errors but converts them into silent wrong-result failures; 66 of 224 examples remain incorrect under the best-performing agent and no agent in this study could close that gap.
+We evaluate six text-to-SQL configurations on the Spider Hard and Extra Hard subset (n = 224) using Qwen3.5-9b as the backbone model. A feedback loop that retries on execution errors reaches 70.5% execution accuracy (+7.6 pp over the single-shot baseline). Blind self-correction reaches 67.4% without execution access. A verify-and-revise agent that checks returned rows against the question nearly ties the feedback loop at 70.1% but makes 2.71 API calls per example versus ~1.2 for the feedback loop. A ReActAgent with four tools and OpenAI function calling drops below the single-shot baseline at 58.0% (−4.9 pp). Chaining error feedback, blind review, and verification into an explicit pipeline gives the best result at 72.3% (+1.8 pp over the feedback loop), though the gain is modest. Analysis shows that execution feedback eliminates all runtime errors but converts them into silent wrong-result failures; the pipeline narrows these from 66 to 61 of 224 examples but does not close the gap, because the remaining failures are logical errors — and, in 13 cases, correct results scored wrong only because their columns are returned in a different order.
 
 ## 1. Introduction
 
@@ -10,7 +10,7 @@ Large language models can translate natural language questions into SQL with imp
 
 One proposed remedy is the execution feedback loop: generate SQL, execute it against the target database, observe the result or error, and revise. If the query raises a runtime error, the error message is a concrete, actionable signal the model can act on. A weaker alternative is blind self-correction: ask the model to review its own output without executing it, in the style of DIN-SQL's self-review pass. This study asks which signal — execution error, blind review, or no feedback at all — translates into measurable accuracy gains on hard queries.
 
-We evaluate five agents on the Spider Hard and Extra Hard subsets using the same model and prompt. The feedback loop raises execution accuracy (EX) by 7.6 percentage points over the single-shot baseline; blind self-correction gains 4.5 percentage points. A verify-and-revise agent nearly matches the feedback loop (70.1% vs 70.5%) at higher cost. A ReActAgent with four tools (function calling) underperforms single-shot (58.0%), suggesting that autonomous tool use does not pay off on clean Spider schemas with this model. The analysis reveals a ceiling: execution feedback eliminates all runtime errors but converts them into silent wrong-result failures, which no agent in this study could fix without richer output-level feedback.
+We evaluate six configurations on the Spider Hard and Extra Hard subsets using the same model and prompt. The feedback loop raises execution accuracy (EX) by 7.6 percentage points over the single-shot baseline; blind self-correction gains 4.5 percentage points. A verify-and-revise agent nearly matches the feedback loop (70.1% vs 70.5%) at higher cost. A ReActAgent with four tools (function calling) underperforms single-shot (58.0%), suggesting that autonomous tool use does not pay off on clean Spider schemas with this model. Chaining feedback, blind review, and verification into an explicit pipeline gives the best result (72.3%), but only +1.8pp over the feedback loop. The analysis reveals a ceiling: execution feedback eliminates all runtime errors but converts them into silent wrong-result failures, which even the pipeline only narrows (66 to 61) rather than closes.
 
 ## 2. Related Work
 
@@ -40,7 +40,9 @@ The agent is structured around three components. `SQLExecutor` (src/tools.py) wr
 
 `ReActAgent` uses OpenAI function calling to give the LLM autonomous access to four tools: `execute_sql`, `sample_rows`, `describe_table`, and `get_distinct_values`. The model decides which tools to call and when to stop exploring and return SQL. Before returning the final SQL, the agent executes it; if it errors, it falls back to the last clean `execute_sql` result from the tool loop.
 
-All five agents use the same model, system prompt, and schema formatter. They differ in whether and how feedback is provided, and whether the LLM can invoke tools autonomously.
+`PipelineAgent` chains three mechanisms into one explicit flow with a fixed order and separate budgets, so they do not compete for a shared retry counter: (1) error feedback — generate and retry on execution errors; (2) blind review — one self-review pass over the clean SQL; (3) verify — one verifier call on the returned rows, with one revision if it says NO. A per-example `stage_changed` field records which stage, if any, altered the final query.
+
+All six configurations use the same model, system prompt, and schema formatter. They differ in whether and how feedback is provided, whether the LLM can invoke tools autonomously, and whether mechanisms are combined.
 
 ## 5. Experimental Setup
 
@@ -52,7 +54,7 @@ All five agents use the same model, system prompt, and schema formatter. They di
 
 ## 6. Results
 
-![Figure 1: Execution accuracy by agent on Spider Hard + Extra Hard (n=224). Dashed line marks the single-shot baseline at 62.9%. ReAct bar shown in red.](figures/fig1_ex_by_agent.png)
+![Figure 1: Execution accuracy by configuration on Spider Hard + Extra Hard (n=224). Dashed line marks the single-shot baseline at 62.9%. The pipeline is best (72.3%); ReAct, in red, is the only condition below baseline.](figures/fig1_ex_by_agent.png)
 
 **Table 1. Main results.**
 
@@ -63,6 +65,9 @@ All five agents use the same model, system prompt, and schema formatter. They di
 | Feedback loop | execute_sql | 158/224 | 70.5% | +7.6pp |
 | Verify-and-revise | execute_sql | 157/224 | 70.1% | +7.2pp |
 | ReActAgent | execute_sql, sample_rows, describe_table, get_distinct_values | 130/224 | 58.0% | −4.9pp |
+| Pipeline (feedback + blind + verify) | execute_sql | 162/224 | 72.3% | +9.4pp |
+
+The pipeline chains three mechanisms in a fixed order — error feedback, then a blind review pass, then result verification — each with its own budget. It is the best-performing condition at 72.3%, +1.8pp over the feedback loop alone. The gain is real but modest: the three stages changed 65 SQL queries in total (29 from error feedback, 18 from blind review, 18 from verification) for a net improvement of only +4 examples over the feedback loop (+11 fixed, −7 regressed), and it narrows the wrong-result count from 66 to 61 rather than closing it.
 
 **By hardness.**
 
@@ -119,7 +124,7 @@ Future work should explore three directions. First, running the same comparison 
 
 ## 9. Conclusion
 
-On clean Spider schemas with a small model, execution feedback is the most efficient correction mechanism: the feedback loop reaches 70.5% EX at roughly 1.2 API calls per example, a 7.6 pp gain over single-shot. Blind self-correction adds 4.5 pp without any execution access, at a higher call count. Verify-and-revise ties the feedback loop at 70.1% but costs 2.71 calls per example, with near-zero net benefit from the verification layer — the verifier catches only 3 previously wrong examples while adding 24 false-positive revisions on already-correct results. ReActAgent with four tools drops below single-shot (58.0%), showing that autonomous tool use over a clean schema hurts rather than helps on this task and model. The fundamental obstacle is not syntactic: after the feedback loop eliminates all runtime errors, 66 of 224 examples remain wrong due to logical mistakes the model cannot diagnose from an error message alone. Closing that gap requires output-level feedback that goes beyond what execution errors or a small-model verifier reading 10 rows can provide.
+On clean Spider schemas with a small model, execution feedback is the most efficient correction mechanism: the feedback loop reaches 70.5% EX at roughly 1.2 API calls per example, a 7.6 pp gain over single-shot. Blind self-correction adds 4.5 pp without any execution access, at a higher call count. Verify-and-revise ties the feedback loop at 70.1% but costs 2.71 calls per example, with near-zero net benefit from the verification layer — the verifier catches only 3 previously wrong examples while adding 24 false-positive revisions on already-correct results. ReActAgent with four tools drops below single-shot (58.0%), showing that autonomous tool use over a clean schema hurts rather than helps on this task and model. Chaining error feedback, blind review, and verification into an explicit pipeline gives the best overall result (72.3%, +1.8 pp over feedback alone), but the gain is modest and shows diminishing returns: three stages altered 65 queries for a net of only +4 correct. The fundamental obstacle is not syntactic: after error feedback eliminates all runtime errors, the pipeline still leaves 61 of 224 examples wrong, and re-executing those failures shows 13 are correct results scored wrong only for column ordering while the rest are genuine logical mistakes — wrong-table joins and incorrect subquery logic — that no execution error, verifier, or value-inspecting tool can diagnose. Closing that gap requires either a less brittle evaluation metric or output-level feedback that compares against the expected result.
 
 ## References
 

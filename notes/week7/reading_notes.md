@@ -42,35 +42,30 @@ Static datasets (Spider 1.0, BIRD — my setting) give the model a fixed (questi
 
 ## Final Benchmark Plan
 
-My benchmark is already built and run; this documents its final form.
+### Objective
 
-**Dataset / subset.** Spider 1.0 development set, filtered to Hard + Extra Hard (n = 224: 148 Hard, 76 Extra Hard). Single-turn, clean small schemas (~27 cols) — deliberately the tractable, static end of the difficulty curve, chosen to isolate correction/tool mechanisms rather than chase enterprise or interactive difficulty.
+The goal of this benchmark is not to top a leaderboard but to isolate a single question: on clean, small database schemas, how much does each correction or tool-use mechanism actually contribute to text-to-SQL accuracy, and where does each one stop helping? Because every method is run on the same questions, the same schema, the same model, and the same prompt, any difference in accuracy is attributable to the mechanism alone rather than to prompt engineering, model choice, or dataset difficulty. In particular the study aims to measure the value of execution feedback — running the query and feeding back the database's error — and to test whether layering verification or autonomous tool use on top of that feedback buys anything further.
 
-**Methods to compare (5 agents, same model Qwen3.5-9b, same prompt, zero-shot).**
-- Single-shot (no correction) — baseline
-- Blind self-correction (review without executing) — DIN-SQL-style
-- Feedback loop (execute → read error → revise) — the core mechanism
-- Verify-and-revise (execute → verify returned rows → revise) — targets the wrong-result ceiling
-- ReAct (4 tools via function calling, LLM-driven) — targets the "add tools" question
+### Dataset
 
-**Metrics.** Primary: Execution Accuracy (EX), order-independent frozenset match of result rows. Secondary, per agent: execution_error vs wrong_result counts; tool-call counts (ReAct); per-example fixes/regressions vs the feedback loop; verifier precision/recall (verify).
+Evaluation uses the Spider 1.0 development set restricted to the Hard and Extra Hard subsets (n = 224: 148 Hard, 76 Extra Hard). Spider is chosen for its clean, small, synthetic schemas (~27 columns per database), which keep failures structural rather than value-interpretation noise and let the full schema fit in the prompt. The Hard subset is chosen because easy questions are already solved by a single call and carry no diagnostic signal, whereas the hard structures — nested subqueries, GROUP BY, HAVING, joins, and set operations — are exactly where correction mechanisms are expected to differ. This is deliberately the static, tractable end of the difficulty curve; enterprise scale (Spider 2.0) and interactive settings (BIRD-INTERACT) are out of scope.
 
-**Expected tables & figures.**
-- Table 1 — EX for all 5 agents with tool column and Δ vs single-shot.
-- Table 2 — EX by hardness (Hard / Extra Hard) × 5 agents.
-- Table 3 — EX by SQL pattern (nested / JOIN / NOT IN / GROUP BY / INTERSECT / EXCEPT / ORDER BY / HAVING / UNION).
-- Table 4 — failure breakdown (execution_error vs wrong_result) across 5 agents.
-- Figure 1 — the correction-mechanism ladder (single → blind → feedback → verify → ReAct) as a bar chart, showing the rise to feedback and the drop at ReAct.
+### Baselines
 
-**Error-analysis categories.**
-1. `execution_error` — SQL raised (syntactic/schema).
-2. `wrong_result` — ran cleanly but wrong rows (the logical/silent class; my ceiling).
-3. By SQL pattern (which structures each mechanism fixes vs. can't touch).
-4. Verify-specific: genuine fixes vs false-positive NO calls on already-correct results (3 vs 24).
-5. ReAct-specific: exploration-SQL-returned-as-final-answer.
+Two conditions serve as baselines that never touch the database. The **single-shot** agent generates one query and returns it, establishing the floor against which every other method is measured. **Blind self-correction** generates a query and then reviews and revises it against the schema and question without ever executing it, in the style of DIN-SQL's self-review pass; it isolates how far a model can improve on pure self-inspection, with no execution signal.
 
-**Risks / scope reductions if time is limited.**
-- Single model (Qwen3.5-9b); a second model (GPT-4o-mini) is the first thing to cut/defer.
-- Simplified hardness classifier (not Spider's official one) may misclassify boundary cases.
-- Run-to-run non-determinism at temperature 0 slightly blurs cross-agent per-example comparisons; report only causal (flagged) differences.
-- Out of scope for a solo project: BIRD/Spider 2.0 scale, and any multi-turn/interactive (clarification, user simulation) setting — noted as future work, not attempted.
+### Proposed Methods
+
+Three methods extend the baselines by giving the agent access to the database or to tools — the element the baselines lack. The **feedback loop** executes the query, and on a runtime error feeds the error message back and retries; this is the core mechanism the study is built around. **Verify-and-revise** goes one step further: after a clean execution it asks a separate verifier call whether the returned rows actually answer the question, targeting the logical errors that error-only feedback cannot see. **ReAct** gives the model four tools through function calling (`execute_sql`, `sample_rows`, `describe_table`, `get_distinct_values`) and lets it decide autonomously when to call them, testing whether autonomous tool use adds value on clean schemas. Finally, a **pipeline** chains three of these mechanisms into one explicit flow — error feedback, then a blind review pass, then result verification — with each stage given its own budget so they do not compete for a single shared retry counter. This directly tests whether combining the mechanisms recovers more than the strongest one alone.
+
+### Metrics
+
+The primary metric is execution accuracy (EX): predicted and gold SQL are executed and their result rows compared as order-independent sets. Secondary, per-agent measures characterise *how* each method succeeds or fails: the split between execution errors and wrong-result failures, average API/tool calls per example (to weigh cost against accuracy), per-example fixes and regressions relative to the feedback loop, and verifier precision and recall for the verify agent. Results are reported overall, by hardness level, and by SQL pattern, and summarised in a bar chart of EX across all conditions (Figure 1).
+
+### Error Analysis
+
+Failures are categorised first by type — `execution_error` (the query raised, i.e. syntactic or schema errors) versus `wrong_result` (the query ran cleanly but returned the wrong rows, the silent logical class that forms the accuracy ceiling) — and then by SQL pattern, to show which structures each mechanism can and cannot fix. Two method-specific categories capture the most informative failures: for verify-and-revise, the split between genuine fixes and false-positive flags on already-correct results (3 versus 24); and for ReAct, cases where the agent returns an exploration query as its final answer instead of one that answers the question. Re-executing the 66 wrong-result cases left by the feedback loop reveals a further split: 13 are false negatives where the predicted result is correct but its columns are returned in a different order than the gold query, so the strict set-based match scores them wrong; the remaining 53 are genuine logical errors, dominated by wrong-table joins and incorrect subquery logic. This matters for the pipeline decision: none of the available tools (which inspect values and column names) can fix wrong-table joins or subquery logic, so the pipeline combines feedback, blind review, and verification rather than adding tools — and even so it only narrows the ceiling slightly (66 to 61 wrong-result), confirming that the remaining errors are logical, not mechanical.
+
+### Risks and Scope Reductions
+
+The main limitation is that all results come from a single model (Qwen3.5-9b); repeating the comparison on a second model such as GPT-4o-mini would be the first extension if time allowed, and is the first thing to defer if not. The hardness labels come from a simplified reimplementation of Spider's classifier, so boundary cases may be misclassified. Because temperature-0 decoding is not perfectly deterministic across runs, per-example cross-agent comparisons are blurred slightly, so only causally attributable differences are emphasised. Enterprise scale and any multi-turn or interactive setting are out of scope for a solo project and are noted as future work rather than attempted.
