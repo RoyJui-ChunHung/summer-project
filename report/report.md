@@ -28,7 +28,7 @@ We report execution accuracy (EX): both the gold and predicted SQL are executed 
 
 ## 4. Method
 
-The agent is structured around three components. `SQLExecutor` (src/tools.py) wraps SQLite execution, returning an `ExecutionResult` that holds either the result rows or an error message. `format_schema` renders a Spider database schema as CREATE TABLE statements (the Code Representation format of DAIL-SQL; Gao et al., 2023), giving the model a compact representation of the available tables and columns. Five agents (src/agents.py) share the same abstract interface, differing only in how — and whether — feedback is provided.
+The agent is structured around three components. `SQLExecutor` (src/tools.py) wraps SQLite execution, returning an `ExecutionResult` that holds either the result rows or an error message. `format_schema` renders a Spider database schema as CREATE TABLE statements (the Code Representation format of DAIL-SQL; Gao et al., 2023), giving the model a compact representation of the available tables and columns. Six configurations (src/agents.py) share the same abstract interface, differing only in how — and whether — feedback is provided. All of them use the same schema-aware prompt format (the Code Representation format above); the single-shot baseline is therefore schema-aware direct prompting, and the other configurations add correction or tool-use mechanisms on top of that shared input.
 
 `SingleShotAgent` calls the LLM once and returns the SQL as-is. This is the baseline: no retries, no feedback, one API call per example.
 
@@ -48,7 +48,7 @@ All six configurations use the same model, system prompt, and schema formatter. 
 
 **Model.** Qwen3.5-9b via OpenRouter, temperature 0, max_tokens 2048.
 
-**Conditions.** Single-shot (`max_retries=1`), blind self-correction (`max_retries=3`), feedback loop (`max_retries=3`), verify-and-revise (`max_retries=3`), and ReActAgent (`max_retries=8`; higher budget to allow tool exploration before producing final SQL). The oracle baseline (gold SQL as prediction) verifies the evaluation infrastructure and achieves ~100% EX.
+**Conditions.** Single-shot (`max_retries=1`), blind self-correction (`max_retries=3`), feedback loop (`max_retries=3`), verify-and-revise (`max_retries=3`), ReActAgent (`max_retries=8`; higher budget to allow tool exploration before producing final SQL), and the pipeline (`error_retries=2`, then one blind-review pass and one verify pass — up to five calls per example). The oracle baseline (gold SQL as prediction) verifies the evaluation infrastructure and achieves ~100% EX.
 
 **Implementation note.** An early run with `max_tokens=512` produced 28% EX because Qwen3's internal reasoning tokens consumed the entire token budget, leaving the response content empty. Raising the limit to 2048 eliminated this artifact (0/224 empty predictions across all runs). Qwen3 occasionally prepends reasoning prose before the SQL in its response; the parser extracts the first top-level SELECT or WITH statement to handle this.
 
@@ -71,38 +71,40 @@ The pipeline chains three mechanisms in a fixed order — error feedback, then a
 
 **By hardness.**
 
-| | Single-shot | Blind | Feedback | Verify | ReAct |
-|---|---|---|---|---|---|
-| Hard (n=148) | 64.2% | 65.5% | 68.9% | 68.2% | 58.1% |
-| Extra Hard (n=76) | 60.5% | 71.1% | 73.7% | 73.7% | 57.9% |
+| | Single-shot | Blind | Feedback | Verify | ReAct | Pipeline |
+|---|---|---|---|---|---|---|
+| Hard (n=148) | 64.2% | 65.5% | 68.9% | 68.2% | 58.1% | 69.6% |
+| Extra Hard (n=76) | 60.5% | 71.1% | 73.7% | 73.7% | 57.9% | 77.6% |
 
 Extra Hard questions improve more across the board for the feedback-style agents, consistent with Extra Hard queries more often producing syntax errors that retry loops can address. Verify-and-revise matches feedback exactly on Extra Hard (73.7%). ReAct trails single-shot on both hardness levels.
 
 **By SQL pattern.** Table 2 shows EX broken down by the structural pattern present in the gold SQL.
 
-| Pattern | n | Single-shot | Blind | Feedback | Verify | ReAct |
-|---|---|---|---|---|---|---|
-| Nested SELECT | 157 | 63.7% | 67.5% | 72.6% | 72.0% | 56.1% |
-| JOIN | 105 | 52.4% | 59.0% | 62.9% | 61.0% | 47.6% |
-| NOT IN | 46 | 82.6% | 80.4% | 91.3% | 89.1% | 73.9% |
-| GROUP BY | 39 | 30.8% | 43.6% | 38.5% | 46.2% | 35.9% |
-| INTERSECT | 38 | 57.9% | 81.6% | 76.3% | 78.9% | 60.5% |
-| EXCEPT | 31 | 71.0% | 71.0% | 77.4% | 74.2% | 58.1% |
-| ORDER BY | 29 | 65.5% | 65.5% | 69.0% | 72.4% | 55.2% |
-| HAVING | 15 | 26.7% | 40.0% | 40.0% | 53.3% | 46.7% |
-| UNION | 11 | 45.5% | 36.4% | 54.5% | 54.5% | 54.5% |
+| Pattern | n | Single-shot | Blind | Feedback | Verify | ReAct | Pipeline |
+|---|---|---|---|---|---|---|---|
+| Nested SELECT | 157 | 63.7% | 67.5% | 72.6% | 72.0% | 56.1% | 74.5% |
+| JOIN | 105 | 52.4% | 59.0% | 62.9% | 61.0% | 47.6% | 64.8% |
+| NOT IN | 46 | 82.6% | 80.4% | 91.3% | 89.1% | 73.9% | 89.1% |
+| GROUP BY | 39 | 30.8% | 43.6% | 38.5% | 46.2% | 35.9% | 51.3% |
+| INTERSECT | 38 | 57.9% | 81.6% | 76.3% | 78.9% | 60.5% | 84.2% |
+| EXCEPT | 31 | 71.0% | 71.0% | 77.4% | 74.2% | 58.1% | 77.4% |
+| ORDER BY | 29 | 65.5% | 65.5% | 69.0% | 72.4% | 55.2% | 69.0% |
+| HAVING | 15 | 26.7% | 40.0% | 40.0% | 53.3% | 46.7% | 53.3% |
+| UNION | 11 | 45.5% | 36.4% | 54.5% | 54.5% | 54.5% | 54.5% |
 
 ## 7. Analysis
 
 **Failure breakdown.**
 
-| Reason | Single-shot | Blind | Feedback | Verify | ReAct |
-|---|---|---|---|---|---|
-| execution_error | 32 | 14 | 0 | 1 | 0 |
-| wrong_result | 51 | 59 | 66 | 66 | 94 |
-| Total failures | 83 | 73 | 66 | 67 | 94 |
+| Reason | Single-shot | Blind | Feedback | Verify | ReAct | Pipeline |
+|---|---|---|---|---|---|---|
+| execution_error | 32 | 14 | 0 | 1 | 0 | 1 |
+| wrong_result | 51 | 59 | 66 | 66 | 94 | 61 |
+| Total failures | 83 | 73 | 66 | 67 | 94 | 62 |
 
-The single-shot run produced 32 execution errors and 51 wrong-result failures (83 total). Blind self-correction reduces execution errors to 14 — catching some syntax mistakes through review alone — while wrong-result rises to 59 (73 total failures). The feedback loop eliminates all 32 execution errors entirely and brings total failures to 66, all wrong-result. Verify-and-revise nearly matches feedback (70.1% vs 70.5%) at higher API cost, with no meaningful reduction in wrong-result. ReActAgent eliminates execution errors (0) but wrong-result jumps to 94 — the model uses tools to explore the database but then returns an intermediate exploration query as its final answer rather than the SQL that answers the question. Whether this reflects a limitation specific to Qwen3.5-9b's function-calling calibration or a more general mismatch between ReAct-style tool use and the SQL generation task cannot be determined from a single model; this is left to future work.
+The single-shot run produced 32 execution errors and 51 wrong-result failures (83 total). Blind self-correction reduces execution errors to 14 — catching some syntax mistakes through review alone — while wrong-result rises to 59 (73 total failures). The feedback loop eliminates all 32 execution errors entirely and brings total failures to 66, all wrong-result. Verify-and-revise nearly matches feedback (70.1% vs 70.5%) at higher API cost, with no meaningful reduction in wrong-result. ReActAgent eliminates execution errors (0) but wrong-result jumps to 94 — the model uses tools to explore the database but then returns an intermediate exploration query as its final answer rather than the SQL that answers the question. Whether this reflects a limitation specific to Qwen3.5-9b's function-calling calibration or a more general mismatch between ReAct-style tool use and the SQL generation task cannot be determined from a single model; this is left to future work. The pipeline is the only configuration to reduce wrong-result below the feedback loop (66 to 61), by combining three correction stages, but the reduction is small.
+
+**What the remaining failures actually are.** Re-executing the 66 wrong-result cases left by the feedback loop splits them in two. Thirteen are false negatives: the predicted result is correct but its columns are returned in a different order than the gold query, so the strict set-based comparison scores them wrong. For example, for "the average and maximum age for each pet type," the gold query selects `(avg, max, pettype)` while the model returns `(pettype, avg, max)` — identical content, different order. Adjusting the metric to compare columns as an unordered set would raise the feedback loop's EX from 70.5% to roughly 76%. The remaining 53 are genuine logical errors, dominated by two patterns: wrong-table joins (the model joins an extra table such as `model_list` that changes the result) and incorrect subquery logic (e.g. using `MAX(...)` where the question asks for the row with the maximum, or writing the wrong branch of a `NOT IN` / `EXCEPT` condition). Neither class is fixable by the available tools, which inspect values and column names rather than table relationships — which is why the pipeline combines correction mechanisms instead of adding tools, and why even so it only narrows the ceiling. These findings echo broader concerns that text-to-SQL benchmarks and their evaluation are imperfect (Text-to-SQL Benchmarks are Broken, 2024).
 
 **Where feedback helps.** Feedback loop shows the largest gains on patterns that frequently produce runtime errors on a first attempt: NOT IN (+8.7pp), Nested SELECT (+8.9pp), JOIN (+10.5pp), and HAVING (+13.3pp). INTERSECT shows the largest fb-delta (+18.4pp over single-shot), consistent with INTERSECT/UNION/EXCEPT syntax being easy to get slightly wrong.
 
@@ -119,6 +121,8 @@ The single-shot run produced 32 execution errors and 51 wrong-result failures (8
 This study evaluates a single model (Qwen3.5-9b) with a fixed prompt. Conclusions may not generalise to larger or differently trained models. The hardness classifier is a simplified reimplementation of Spider's official one; misclassification of boundary cases could shift the Hard/Extra Hard split.
 
 Two Qwen3-specific mitigations were required: the `/no-think` prompt suffix to suppress extended-reasoning mode, and raising `max_tokens` to 2048 to prevent the reasoning budget from consuming the entire response. These may not generalise to other models.
+
+The evaluation tracks execution accuracy and the execution-error / wrong-result split, but does not separately measure some diagnostics that would sharpen the error analysis — in particular the rate of hallucinated schema references (queries naming tables or columns that do not exist), which are currently folded into the execution-error count rather than counted on their own. Because temperature-0 decoding is not perfectly reproducible across runs, small cross-agent gaps of one to two points are within run-to-run noise, so only larger differences are treated as meaningful.
 
 Future work should explore three directions. First, running the same comparison with a second model (GPT-4o-mini) to test whether stronger models show smaller feedback gains and whether the ReAct result holds on a second model. Second, result-level feedback was attempted via VerifyAndReviseAgent but failed on verifier recall — the verifier passed 66 wrong-result queries it should have caught. Closing the wrong-result ceiling likely requires gold-comparison feedback (showing the model both its result and the expected result), which is not available in a blind evaluation setting. Third, evaluating on BIRD, where larger and noisier schemas would make schema retrieval and value lookup tools more impactful than on clean Spider schemas.
 
@@ -137,6 +141,8 @@ Pourreza, M. and Rafiei, D. (2023). DIN-SQL: Decomposed In-Context Learning of T
 Shinn, N., Cassano, F., Gopinath, A., Narasimhan, K., and Yao, S. (2023). Reflexion: Language Agents with Verbal Reinforcement Learning. In *Advances in Neural Information Processing Systems (NeurIPS)*, 36.
 
 Talaei, S., Pourreza, M., Chang, Y.-C., Mirhoseini, A., and Saberi, A. (2024). CHESS: Contextual Harnessing for Efficient SQL Synthesis. *arXiv preprint*.
+
+Text-to-SQL Benchmarks are Broken: An In-Depth Analysis of Annotation Errors (2024). *arXiv preprint* [verify authors/venue].
 
 Wang, B., Ren, C., Yang, J., Liang, X., Bai, J., Chai, L., Yan, Z., Zhang, Q.-W., Yin, D., Sun, X., and Li, Z. (2023). MAC-SQL: A Multi-Agent Collaborative Framework for Text-to-SQL. *arXiv preprint*.
 
